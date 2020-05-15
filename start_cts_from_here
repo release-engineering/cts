@@ -1,0 +1,6 @@
+#!/bin/bash
+
+export PYTHONPATH=.
+export CTS_DEVELOPER_ENV=1
+
+python cts/manage.py runssl

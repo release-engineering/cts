@@ -1,0 +1,6 @@
+#!/bin/bash
+
+export PYTHONPATH=.
+
+CTS_DEVELOPER_ENV=1 python cts/manage.py upgradedb
+CTS_DEVELOPER_ENV=1 python cts/manage.py db migrate

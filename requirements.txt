@@ -1,0 +1,12 @@
+futures
+funcsigs
+python-fedora
+sqlalchemy
+Flask
+Flask-Migrate
+Flask-SQLAlchemy
+Flask-Script
+Flask-Login < 0.5.0
+requests
+productmd
+pyldap
