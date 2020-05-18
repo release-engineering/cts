@@ -21,7 +21,7 @@
 # Written by Jan Kaluza <jkaluza@redhat.com>
 
 from cts import db
-from cts.models import User, Compose
+from cts.models import User, Compose, Tag
 
 from utils import ModelsBaseTest
 
@@ -89,6 +89,116 @@ class TestComposeModel(ModelsBaseTest):
 
         self.assertEqual(compose.respin, 2)
         self.assertEqual(ci.compose.respin, 2)
+
+
+class TestTagModel(ModelsBaseTest):
+
+    def setup_composes(self):
+        self.compose = Compose.create(db.session, "odcs", self.ci)[0]
+        self.me = User.create_user("me")
+        self.you = User.create_user("you")
+        t = Tag.create(
+            db.session, name="periodic", description="Periodic compose",
+            documentation="http://localhost/"
+        )
+        t.add_tagger("me")
+        t.add_tagger("you")
+        t.add_untagger("me")
+        t = Tag.create(
+            db.session, name="nightly", description="Nightly compose",
+            documentation="http://localhost/"
+        )
+        t.add_tagger("me")
+        db.session.commit()
+
+    def test_add_remove_tagger(self):
+        t = Tag.get_by_name("periodic")
+        self.assertEqual(t.taggers, [self.me, self.you])
+
+        # Remove "me".
+        r = t.remove_tagger("me")
+        self.assertEqual(r, True)
+        self.assertEqual(t.taggers, [self.you])
+
+        # Remove "me" again to test it does not break.
+        r = t.remove_tagger("me")
+        self.assertEqual(r, True)
+        self.assertEqual(t.taggers, [self.you])
+
+        # Remove "me" again to test it does not break.
+        r = t.remove_tagger("me")
+        self.assertEqual(r, True)
+        self.assertEqual(t.taggers, [self.you])
+
+        # Add non-existing.
+        r = t.add_tagger("non-existing")
+        self.assertEqual(r, False)
+        self.assertEqual(t.taggers, [self.you])
+
+    def test_add_remove_untagger(self):
+        t = Tag.get_by_name("periodic")
+
+        # Add "me"
+        r = t.add_untagger("you")
+        self.assertEqual(r, True)
+        self.assertEqual(t.untaggers, [self.me, self.you])
+
+        # Remove "me".
+        r = t.remove_untagger("me")
+        self.assertEqual(r, True)
+        self.assertEqual(t.untaggers, [self.you])
+
+        # Remove "me" again to test it does not break.
+        r = t.remove_untagger("me")
+        self.assertEqual(r, True)
+        self.assertEqual(t.untaggers, [self.you])
+
+        # Remove "me" again to test it does not break.
+        r = t.remove_untagger("me")
+        self.assertEqual(r, True)
+        self.assertEqual(t.untaggers, [self.you])
+
+        # Add non-existing.
+        r = t.add_untagger("non-existing")
+        self.assertEqual(r, False)
+        self.assertEqual(t.untaggers, [self.you])
+
+    def test_json(self):
+        expected_json = {
+            "description": "Periodic compose",
+            "documentation": "http://localhost/",
+            "id": 1,
+            "name": "periodic",
+            "taggers": ["me", "you"],
+            "untaggers": ["me"]
+        }
+        self.assertEqual(Tag.get_by_name("periodic").json(), expected_json)
+
+    def test_compose_tagging(self):
+        self.assertEqual(self.compose.tags, [])
+
+        # Tag with "periodic"
+        ret = self.compose.tag("periodic")
+        db.session.commit()
+        db.session.expire_all()
+        self.compose = db.session.query(Compose).first()
+        self.assertEqual(self.compose.tags, [Tag.get_by_name("periodic")])
+        self.assertEqual(ret, True)
+
+        # Untag "nightly" which is not tagged yet.
+        ret = self.compose.untag("nightly")
+        self.assertEqual(ret, True)
+        self.assertEqual(self.compose.tags, [Tag.get_by_name("periodic")])
+
+        # Untag "periodic"
+        ret = self.compose.untag("periodic")
+        self.assertEqual(ret, True)
+        self.assertEqual(self.compose.tags, [])
+
+        # Tag with "non-existing"
+        ret = self.compose.tag("non-existing")
+        self.assertEqual(ret, False)
+        self.assertEqual(self.compose.tags, [])
 
 
 class TestUserModel(ModelsBaseTest):

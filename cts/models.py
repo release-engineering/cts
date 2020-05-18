@@ -89,6 +89,137 @@ class User(CTSBase, UserMixin):
         return user
 
 
+tags_to_composes = db.Table(
+    "tags_to_composes",
+    db.Column("compose_id", db.Integer, db.ForeignKey("composes.id"), nullable=False),
+    db.Column("tag_id", db.Integer, db.ForeignKey("tags.id"), nullable=False),
+    db.UniqueConstraint("compose_id", "tag_id", name="unique_tags"),
+)
+
+
+taggers = db.Table(
+    "taggers",
+    db.Column("user_id", db.Integer, db.ForeignKey("users.id"), nullable=False),
+    db.Column("tag_id", db.Integer, db.ForeignKey("tags.id"), nullable=False),
+    db.UniqueConstraint("user_id", "tag_id", name="unique_taggers"),
+)
+
+
+untaggers = db.Table(
+    "untaggers",
+    db.Column("user_id", db.Integer, db.ForeignKey("users.id"), nullable=False),
+    db.Column("tag_id", db.Integer, db.ForeignKey("tags.id"), nullable=False),
+    db.UniqueConstraint("user_id", "tag_id", name="unique_untaggers"),
+)
+
+
+class Tag(CTSBase):
+    __tablename__ = "tags"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String, nullable=False, unique=True)
+    # Short description of the tag.
+    description = db.Column(db.String, nullable=False)
+    # Link to tag documentation.
+    documentation = db.Column(db.String, nullable=False)
+    # Users allowed to tag the compose with this tag.
+    taggers = db.relationship("User", secondary=taggers)
+    # Users allowed to untag the compose with this tag.
+    untaggers = db.relationship("User", secondary=untaggers)
+
+    @classmethod
+    def create(cls, session, **kwargs):
+        tag = cls(**kwargs)
+        session.add(tag)
+        return tag
+
+    @classmethod
+    def get_by_name(cls, tag_name):
+        """Find a Tag by its name
+
+        :param str tag_name: Tag name.
+        :return Tag: Tag object.
+        """
+        try:
+            return db.session.query(cls).filter(cls.name == tag_name)[0]
+        except IndexError:
+            return None
+
+    def add_tagger(self, username):
+        """
+        Grant `username` permissions to tag the compose with this tag.
+
+        :param str username: Username
+        :return bool: True if permissions granted, False if user does not exist.
+        """
+        u = User.find_user_by_name(username)
+        if not u:
+            return False
+
+        self.taggers.append(u)
+        return True
+
+    def remove_tagger(self, username):
+        """
+        Revoke `username` permissions to tag the compose with this tag.
+
+        :param str username: Username
+        :return bool: True if permissions revoked, False if user does not exist.
+        """
+        u = User.find_user_by_name(username)
+        if not u:
+            return False
+
+        try:
+            self.taggers.remove(u)
+        except ValueError:
+            # User is not there, so return True.
+            return True
+        return True
+
+    def add_untagger(self, username):
+        """
+        Grant `username` permissions to untag the compose with this tag.
+
+        :param str username: Username
+        :return bool: True if permissions granted, False if user does not exist.
+        """
+        u = User.find_user_by_name(username)
+        if not u:
+            return False
+
+        self.untaggers.append(u)
+        return True
+
+    def remove_untagger(self, username):
+        """
+        Revoke `username` permissions to untag the compose with this tag.
+
+        :param str username: Username
+        :return bool: True if permissions revoked, False if user does not exist.
+        """
+        u = User.find_user_by_name(username)
+        if not u:
+            return False
+
+        try:
+            self.untaggers.remove(u)
+        except ValueError:
+            # User is not there, so return True.
+            return True
+        return True
+
+    def json(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "documentation": self.documentation,
+            "taggers": [u.username for u in self.taggers],
+            "untaggers": [u.username for u in self.untaggers],
+        }
+
+
 class Compose(CTSBase):
     __tablename__ = "composes"
 
@@ -116,6 +247,8 @@ class Compose(CTSBase):
 
     # Name of the user account which built the compose.
     builder = db.Column(db.String)
+    # Compose tags.
+    tags = db.relationship("Tag", secondary=tags_to_composes)
 
     @classmethod
     def create(cls, session, builder, ci):
@@ -192,3 +325,35 @@ class Compose(CTSBase):
             "compose_info": json.loads(ci.dumps()),
             "builder": self.builder
         }
+
+    def tag(self, tag_name):
+        """
+        Tag the compose with tag `tag_name.
+
+        :param str tag_name: Name of the tag.
+        :return bool: True if compose tagged, False if tag does not exist.
+        """
+        t = Tag.get_by_name(tag_name)
+        if not t:
+            return False
+
+        self.tags.append(t)
+        return True
+
+    def untag(self, tag_name):
+        """
+        Remove the tag `tag_name from the compose.
+
+        :param str tag_name: Name of the tag.
+        :return bool: True if compose untagged, False if tag does not exist.
+        """
+        t = Tag.get_by_name(tag_name)
+        if not t:
+            return False
+
+        try:
+            self.tags.remove(t)
+        except ValueError:
+            # Tag is not there, so return True.
+            return True
+        return True
