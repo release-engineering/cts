@@ -21,7 +21,6 @@
 # Written by Chenxiong Qi <cqi@redhat.com>
 
 import json
-import six
 import unittest
 
 from mock import patch
@@ -43,7 +42,6 @@ except ImportError:
 
 
 @unittest.skipUnless(rhmsg, 'rhmsg is required to run this test case.')
-@unittest.skipIf(six.PY3, 'rhmsg has no Python 3 package so far.')
 class TestRHMsgSendMessageWhenComposeIsCreated(ModelsBaseTest):
     """Test send message when compose is created"""
 
@@ -61,16 +59,14 @@ class TestRHMsgSendMessageWhenComposeIsCreated(ModelsBaseTest):
         self.mock_lock.stop()
 
     def setup_composes(self):
-        self.compose = Compose.create(
-            db.session, id="Fedora-Rawhide-20200514.n.0"
-        )
+        self.compose = Compose.create(db.session, "odcs", self.ci)[0]
         db.session.commit()
 
     @patch.object(conf, 'messaging_backend', new='rhmsg')
     @patch('rhmsg.activemq.producer.AMQProducer')
     @patch('proton.Message')
-    def assert_messaging(self, compose, Message, AMQProducer):
-        db.session.commit()
+    def test_send_message(self, Message, AMQProducer):
+        compose = Compose.create(db.session, "odcs", self.ci)[0]
 
         self.assertEqual(
             json.dumps({'event': 'state-changed', 'compose': compose.json()}),
@@ -78,13 +74,6 @@ class TestRHMsgSendMessageWhenComposeIsCreated(ModelsBaseTest):
 
         producer_send = AMQProducer.return_value.__enter__.return_value.send
         producer_send.assert_called_once_with(Message.return_value)
-
-    def test_send_message(self):
-        compose = Compose.create(
-            db.session, id="Fedora-Rawhide-20200514.n.1"
-        )
-
-        self.assert_messaging(compose)
 
 
 @unittest.skipUnless(fedora_messaging, 'fedora_messaging is required to run this test case.')
@@ -105,28 +94,16 @@ class TestFedoraMessagingSendMessageWhenComposeIsCreated(ModelsBaseTest):
         self.mock_lock.stop()
 
     def setup_composes(self):
-        self.compose = Compose.create(
-            db.session, id="Fedora-Rawhide-20200514.n.0"
-        )
-        db.session.commit()
+        self.compose = Compose.create(db.session, "odcs", self.ci)[0]
 
     @patch.object(conf, 'messaging_backend', new='fedora-messaging')
     @patch('fedora_messaging.api.Message')
     @patch('fedora_messaging.api.publish')
-    def assert_messaging(self, compose, publish, Message):
-        # The db.session.commit() calls on-commit handler which produces the fedora-messaging
-        # message.
-        db.session.commit()
+    def test_send_message(self, publish, Message):
+        compose = Compose.create(db.session, "odcs", self.ci)[0]
 
         Message.assert_called_once_with(
             topic="cts.compose.state-changed",
             body={'event': 'state-changed', 'compose': compose.json()})
 
         publish.assert_called_once_with(Message.return_value)
-
-    def test_send_message(self):
-        compose = Compose.create(
-            db.session, id="Fedora-Rawhide-20200514.n.1"
-        )
-
-        self.assert_messaging(compose)

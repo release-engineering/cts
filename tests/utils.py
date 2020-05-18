@@ -22,6 +22,7 @@
 # Written by Chenxiong Qi <cqi@redhat.com>
 
 import unittest
+from productmd import ComposeInfo
 
 from cts import db
 from sqlalchemy import event
@@ -83,6 +84,19 @@ class ModelsBaseTest(unittest.TestCase):
         db.drop_all()
         db.create_all()
         db.session.commit()
+
+        # Default ComposeInfo for tests.
+        self.ci = ComposeInfo()
+        self.ci.compose.id = "Fedora-Rawhide-20200517.n.1"
+        self.ci.compose.type = "nightly"
+        self.ci.compose.date = "20200517"
+        self.ci.compose.respin = 1
+        self.ci.release.name = "Fedora"
+        self.ci.release.short = "Fedora"
+        self.ci.release.version = "Rawhide"
+        self.ci.release.is_layered = False
+        self.ci.release.type = "ga"
+        self.ci.release.internal = False
 
         setup_composes = getattr(self, 'setup_composes', None)
         if setup_composes is not None:
