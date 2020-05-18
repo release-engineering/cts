@@ -22,7 +22,7 @@
 import copy
 from flask import request, url_for
 
-from cts.models import Compose
+from cts.models import Compose, Tag
 
 
 def pagination_metadata(p_query, request_args):
@@ -120,6 +120,31 @@ def filter_composes(flask_request):
 
     query = _order_by(flask_request, query, Compose,
                       ["id"], "-id")
+
+    page = flask_request.args.get('page', 1, type=int)
+    per_page = flask_request.args.get('per_page', 10, type=int)
+    return query.paginate(page, per_page, False)
+
+
+def filter_tags(flask_request):
+    """
+    Returns a flask_sqlalchemy.Pagination object based on the request parameters
+    :param request: Flask request object
+    :return: flask_sqlalchemy.Pagination
+    """
+    search_query = dict()
+
+    for key in ['id', 'name']:
+        if flask_request.args.get(key, None):
+            search_query[key] = flask_request.args[key]
+
+    query = Tag.query
+
+    if search_query:
+        query = query.filter_by(**search_query)
+
+    query = _order_by(flask_request, query, Tag,
+                      ["id", 'name'], "-id")
 
     page = flask_request.args.get('page', 1, type=int)
     per_page = flask_request.args.get('per_page', 10, type=int)

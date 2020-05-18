@@ -28,8 +28,8 @@ from flask import request, jsonify, g
 
 from cts import app, conf, version, db
 from cts.errors import NotFound
-from cts.models import Compose
-from cts.api_utils import pagination_metadata, filter_composes
+from cts.models import Compose, Tag
+from cts.api_utils import pagination_metadata, filter_composes, filter_tags
 from cts.auth import requires_role, login_required, require_scopes
 
 
@@ -49,6 +49,31 @@ api_v1 = {
     },
     'composes_post': {
         'url': '/api/1/composes/',
+        'options': {
+            'methods': ['POST'],
+        }
+    },
+    'tags': {
+        'url': '/api/1/tags/',
+        'options': {
+            'defaults': {'id': None},
+            'methods': ['GET'],
+        }
+    },
+    'tag': {
+        'url': '/api/1/tags/<id>',
+        'options': {
+            'methods': ['GET'],
+        }
+    },
+    'tag_edit': {
+        'url': '/api/1/tags/<int:id>',
+        'options': {
+            'methods': ['PATCH'],
+        }
+    },
+    'tags_post': {
+        'url': '/api/1/tags/',
         'options': {
             'methods': ['POST'],
         }
@@ -150,15 +175,143 @@ class AboutAPI(MethodView):
         return jsonify(json), 200
 
 
+class TagAPI(MethodView):
+    def get(self, id):
+        """ Returns tags.
+
+        If ``id`` is set, only the tag defined by that ID is
+        returned. If ``id`` is string, it is treated as tag name.
+
+        :query string id: Return only tag with this :ref:`id<id>` or :ref:`name<name>`.
+        :query string order_by: Order the tags by the given field. If ``-`` prefix is used,
+            the order will be descending. The default value is ``-id``.
+        :statuscode 200: Tags are returned.
+        :statuscode 404: Tag not found.
+        """
+        if id is None:
+            p_query = filter_tags(request)
+
+            json_data = {
+                'meta': pagination_metadata(p_query, request.args),
+                'items': [item.json() for item in p_query.items]
+            }
+
+            return jsonify(json_data), 200
+
+        else:
+            if id.isdigit():
+                tag = Tag.query.filter_by(id=id).first()
+            else:
+                tag = Tag.query.filter_by(name=id).first()
+            if tag:
+                return jsonify(tag.json()), 200
+            else:
+                raise NotFound('No such tag found.')
+
+    @login_required
+    @require_scopes('new-tag')
+    @requires_role('admins')
+    def post(self):
+        """ Adds new tag to CTS database.
+
+        :jsonparam str name: Tag name.
+        :jsonparam str description: Tag description.
+        :jsonparam str documentation: Link to full documentation about tag.
+
+        :statuscode 200: Tag created and returned.
+        :statuscode 400: Request not in valid format.
+        :statuscode 401: User is unathorized.
+        """
+        data = request.get_json(force=True)
+        if not data:
+            raise ValueError('No JSON POST data submitted.')
+
+        name = data.get("name", None)
+        if not name:
+            raise ValueError('Tag "name" is not defined.')
+
+        description = data.get("description", None)
+        if not description:
+            raise ValueError('Tag "description" is not defined.')
+
+        documentation = data.get("documentation", None)
+        if not documentation:
+            raise ValueError('Tag "documentation" is not defined.')
+
+        t = Tag.create(
+            db.session, name=name, description=description, documentation=documentation
+        )
+        db.session.commit()
+        return jsonify(t.json()), 200
+
+    @login_required
+    @require_scopes('edit-tag')
+    @requires_role('admins')
+    def patch(self, id):
+        """ Edit tag.
+
+        :query number id: :ref:`ID<id>` of the tag to edit.
+        :jsonparam str name: Tag name. If not set, keep original value.
+        :jsonparam str description: Tag description. If not set, keep original value.
+        :jsonparam str documentation: Link to full documentation about tag.
+            If not set, keep original value.
+        :jsonparam str action: One of: "add_tagger", "remove_tagger", "add_untagger",
+            "remove_untagger".  If not set, do not edit taggers/untaggers.
+        :jsonparam str username: Username of tagger/untagger.
+
+        :statuscode 200: Tag updated and returned.
+        :statuscode 401: User is unathorized.
+        :statuscode 404: Tag not found.
+        """
+        t = Tag.query.filter_by(id=id).first()
+        if not t:
+            raise NotFound('No such tag found.')
+
+        data = request.get_json(force=True)
+        if not data:
+            raise ValueError('No JSON POST data submitted.')
+
+        name = data.get("name", None)
+        if name:
+            t.name = name
+
+        description = data.get("description", None)
+        if description:
+            t.description = description
+
+        documentation = data.get("documentation", None)
+        if documentation:
+            t.documentation = documentation
+
+        action = data.get("action", None)
+        if action:
+            if action not in ["add_tagger", "remove_tagger", "add_untagger", "remove_untagger"]:
+                raise ValueError("Unknown action.")
+            username = data.get("username", None)
+            if not username:
+                raise ValueError('"username" is not defined.')
+            r = getattr(t, action)(username)
+            if not r:
+                raise ValueError('User does not exist')
+        db.session.commit()
+        return jsonify(t.json()), 200
+
+
 def register_api_v1():
     """ Registers version 1 of CTS API. """
     composes_view = CTSAPI.as_view('composes')
+    tags_view = TagAPI.as_view('tags')
     about_view = AboutAPI.as_view('about')
     for key, val in api_v1.items():
         if key.startswith("compose"):
             app.add_url_rule(val['url'],
                              endpoint=key,
                              view_func=composes_view,
+                             **val['options'])
+        elif key.startswith("tag"):
+            app.add_url_rule(val['url'],
+                             endpoint=key,
+                             view_func=tags_view,
                              **val['options'])
         elif key.startswith("about"):
             app.add_url_rule(val['url'],

@@ -201,3 +201,195 @@ class TestViews(ViewBaseTest):
             )
 
         self.assertEqual(rv.status, '403 FORBIDDEN')
+
+    def test_tags_get(self):
+        self.test_tags_post()
+        rv = self.client.get('/api/1/tags/')
+        data = json.loads(rv.get_data(as_text=True))
+        expected_data = {
+            'items': [
+                {
+                    'description': 'Periodic compose',
+                    'documentation': 'Foo',
+                    'id': 1,
+                    'name': 'periodic',
+                    'taggers': [],
+                    'untaggers': []
+                }
+            ],
+            'meta': {
+                'first': 'http://localhost/api/1/tags/?page=1&per_page=10',
+                'last': 'http://localhost/api/1/tags/?page=1&per_page=10',
+                'next': None,
+                'page': 1,
+                'pages': 1,
+                'per_page': 10,
+                'prev': None,
+                'total': 1
+            }
+        }
+        self.assertEqual(data, expected_data)
+
+    def test_tags_get_single_tag(self):
+        self.test_tags_post()
+        rv = self.client.get('/api/1/tags/1')
+        data = json.loads(rv.get_data(as_text=True))
+        expected_data = {
+            'description': 'Periodic compose',
+            'documentation': 'Foo',
+            'id': 1,
+            'name': 'periodic',
+            'taggers': [],
+            'untaggers': []
+        }
+        self.assertEqual(data, expected_data)
+
+    def test_tags_get_single_name(self):
+        self.test_tags_post()
+        rv = self.client.get('/api/1/tags/periodic')
+        data = json.loads(rv.get_data(as_text=True))
+        expected_data = {
+            'description': 'Periodic compose',
+            'documentation': 'Foo',
+            'id': 1,
+            'name': 'periodic',
+            'taggers': [],
+            'untaggers': []
+        }
+        self.assertEqual(data, expected_data)
+
+    def test_tags_post(self):
+        with self.test_request_context(user='root'):
+            req = {
+                "name": "periodic",
+                "description": "Periodic compose",
+                "documentation": "Foo",
+            }
+            rv = self.client.post('/api/1/tags/', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+
+        expected_data = {
+            'description': 'Periodic compose',
+            'documentation': 'Foo',
+            'id': 1,
+            'name': 'periodic',
+            'taggers': [],
+            'untaggers': []
+        }
+        self.assertEqual(data, expected_data)
+
+    def test_tags_post_unathorized(self):
+        with self.test_request_context(user='odcs'):
+            req = {
+                "name": "periodic",
+                "description": "Periodic compose",
+                "documentation": "Foo",
+            }
+            rv = self.client.post('/api/1/tags/', json=req)
+        self.assertEqual(rv.status, '403 FORBIDDEN')
+
+    def test_tags_post_incomplete(self):
+        for key in ["name", "description", "documentation"]:
+            with self.test_request_context(user='root'):
+                req = {
+                    "name": "periodic",
+                    "description": "Periodic compose",
+                    "documentation": "Foo",
+                }
+                del req[key]
+                rv = self.client.post('/api/1/tags/', json=req)
+                data = json.loads(rv.get_data(as_text=True))
+
+            self.assertEqual(rv.status, '400 BAD REQUEST')
+            self.assertEqual(data["error"], "Bad Request")
+            self.assertEqual(data["status"], 400)
+            self.assertTrue("is not defined" in data["message"])
+
+    def test_tags_patch(self):
+        self.test_tags_post()
+        with self.test_request_context(user='root'):
+            req = {
+                "name": "periodic-update",
+                "description": "Periodic compose update",
+                "documentation": "Foo update",
+            }
+            rv = self.client.patch('/api/1/tags/1', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+
+        expected_data = {
+            'description': 'Periodic compose update',
+            'documentation': 'Foo update',
+            'id': 1,
+            'name': 'periodic-update',
+            'taggers': [],
+            'untaggers': []
+        }
+        self.assertEqual(data, expected_data)
+
+    def test_tags_patch_unauthorized(self):
+        self.test_tags_post()
+        with self.test_request_context(user='odcs'):
+            req = {
+                "name": "periodic-update",
+                "description": "Periodic compose update",
+                "documentation": "Foo update",
+            }
+            rv = self.client.patch('/api/1/tags/1', json=req)
+        self.assertEqual(rv.status, '403 FORBIDDEN')
+
+    def test_tags_patch_actions(self):
+        self.test_tags_post()
+        User.create_user(username="odcs")
+        db.session.commit()
+
+        for action in ["add_tagger", "remove_tagger", "add_untagger", "remove_untagger"]:
+            with self.test_request_context(user='root'):
+                req = {
+                    "action": action,
+                    "username": "odcs"
+                }
+                rv = self.client.patch('/api/1/tags/1', json=req)
+                data = json.loads(rv.get_data(as_text=True))
+
+            expected_list = [] if "remove" in action else ["odcs"]
+            expected_data = {
+                'description': 'Periodic compose',
+                'documentation': 'Foo',
+                'id': 1,
+                'name': 'periodic',
+                'taggers': expected_list if "untagger" not in action else [],
+                'untaggers': expected_list if "untagger" in action else []
+            }
+            self.assertEqual(data, expected_data)
+
+    def test_tags_patch_actions_unknown_user(self):
+        self.test_tags_post()
+        with self.test_request_context(user='root'):
+            req = {
+                "action": "add_tagger",
+                "username": "not-existing"
+            }
+            rv = self.client.patch('/api/1/tags/1', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(rv.status, '400 BAD REQUEST')
+        self.assertEqual(data["error"], "Bad Request")
+        self.assertEqual(data["status"], 400)
+        self.assertTrue("User does not exist" in data["message"])
+
+    def test_tags_patch_actions_unknown_action(self):
+        self.test_tags_post()
+        User.create_user(username="odcs")
+        db.session.commit()
+        with self.test_request_context(user='root'):
+            req = {
+                "action": "not-existing",
+                "username": "odcs"
+            }
+            rv = self.client.patch('/api/1/tags/1', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(rv.status, '400 BAD REQUEST')
+        self.assertEqual(data["error"], "Bad Request")
+        self.assertEqual(data["status"], 400)
+        self.assertTrue("Unknown action." in data["message"])
