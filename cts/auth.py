@@ -278,7 +278,7 @@ def requires_role(role):
 
     :param str role: role name, supported roles: 'allowed_clients', 'admins'.
     """
-    valid_roles = ['allowed_clients', 'admins']
+    valid_roles = ['allowed_builders', 'admins']
     if role not in valid_roles:
         raise ValueError("Unknown role <%s> specified, supported roles: %s." % (role, str(valid_roles)))
 

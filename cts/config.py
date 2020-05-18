@@ -109,6 +109,10 @@ class Config(object):
             'type': dict,
             'default': {'groups': [], 'users': []},
             'desc': "Admin groups and users."},
+        'allowed_builders': {
+            'type': dict,
+            'default': {'groups': {}, 'users': {}},
+            'desc': "Groups and users that are allowed to add new composes."},
         'auth_backend': {
             'type': str,
             'default': '',

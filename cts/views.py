@@ -21,11 +21,12 @@
 #
 # Written by Jan Kaluza <jkaluza@redhat.com>
 
-
+import json
+from productmd import ComposeInfo
 from flask.views import MethodView
-from flask import request, jsonify
+from flask import request, jsonify, g
 
-from cts import app, conf, version
+from cts import app, conf, version, db
 from cts.errors import NotFound
 from cts.models import Compose
 from cts.api_utils import pagination_metadata, filter_composes
@@ -93,16 +94,32 @@ class CTSAPI(MethodView):
 
     @login_required
     @require_scopes('new-compose')
-    @requires_role('allowed_clients')
+    @requires_role('allowed_builders')
     def post(self):
         """ Adds new compose to CTS database.
 
-        :statuscode 200: Compose request created and returned.
+        :jsonparam ComposeInfo compose_info: Compose metadata in productmd.ComposeInfo format.
+
+        :statuscode 200: Compose request created and updated ComposeInfo returned.
         :statuscode 401: Request not in valid format.
         :statuscode 401: User is unathorized.
         """
-        # TODO: Write it.
-        return jsonify({}), 200
+        data = request.get_json(force=True)
+        if not data:
+            raise ValueError('No JSON POST data submitted')
+
+        ci_json = data.get("compose_info", None)
+        if ci_json is None:
+            raise ValueError('No "compose_info" field in JSON POST data.')
+
+        ci = ComposeInfo()
+        try:
+            ci.loads(json.dumps(ci_json))
+        except Exception as e:
+            raise ValueError('Cannot parse "compose_info": %s' % repr(e))
+
+        ci = Compose.create(db.session, g.user.username, ci)[1]
+        return jsonify(json.loads(ci.dumps())), 200
 
 
 class AboutAPI(MethodView):

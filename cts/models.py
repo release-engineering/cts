@@ -167,6 +167,7 @@ class Compose(CTSBase):
             # In case session.commit() failed with IntegrityErroir, increase
             # the `respin` and try again.
             ci.compose.respin += 1
+            ci.compose.id = ci.create_compose_id()
 
         return compose, ci
 
