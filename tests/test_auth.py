@@ -37,6 +37,7 @@ from cts.auth import query_ldap_groups
 from cts.auth import require_scopes
 from cts.auth import load_krb_or_ssl_user_from_request
 from cts.auth import load_ssl_user_from_request
+from cts.auth import load_anonymous_user
 from cts.errors import Forbidden
 from cts import app, conf, db
 from cts.models import User
@@ -375,7 +376,7 @@ class TestInitAuth(unittest.TestCase):
 
     def test_not_use_auth_backend(self):
         init_auth(self.login_manager, 'noauth')
-        self.login_manager.request_loader.assert_not_called()
+        self.login_manager.request_loader.assert_called_once_with(load_anonymous_user)
 
     def test_error_if_select_an_unknown_backend(self):
         self.assertRaises(ValueError, init_auth, self.login_manager, 'xxx')

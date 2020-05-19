@@ -30,7 +30,6 @@ import flask
 from itertools import chain
 
 from flask import g
-from flask_login import login_required as _login_required
 
 from werkzeug.exceptions import Unauthorized
 from cts import conf, log
@@ -162,6 +161,21 @@ def load_openidc_user(request):
     return user
 
 
+@commit_on_success
+def load_anonymous_user(request):
+    """Set anonymous user for "noauth" backend."""
+    if conf.auth_backend != 'noauth':
+        raise Unauthorized("Anonymous login is enabled only for 'noauth' backend.")
+    username = "anonymous"
+    user = User.find_user_by_name(username)
+    if not user:
+        user = User.create_user(username=username)
+
+    g.groups = []
+    g.user = user
+    return user
+
+
 def validate_scopes(scope):
     """Validate if request scopes are all in required scope
 
@@ -227,6 +241,9 @@ def init_auth(login_manager, backend):
         # Do not enable any authentication backend working with frontend
         # authentication module in Apache.
         log.warning("Authorization is disabled in CTS configuration.")
+        global load_anonymous_user
+        load_anonymous_user = login_manager.request_loader(
+            load_anonymous_user)
         return
     if backend == 'kerberos':
         _validate_kerberos_config()
@@ -293,13 +310,3 @@ def requires_role(role):
             raise Forbidden(msg)
         return wrapped
     return wrapper
-
-
-def login_required(f):
-    """Wrapper of flask_login's login_required to ingore auth check when auth backend is 'noauth'."""
-    @wraps(f)
-    def wrapped(*args, **kwargs):
-        if conf.auth_backend == 'noauth':
-            return f(*args, **kwargs)
-        return _login_required(f)(*args, **kwargs)
-    return wrapped

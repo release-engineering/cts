@@ -25,12 +25,13 @@ import json
 from productmd import ComposeInfo
 from flask.views import MethodView
 from flask import request, jsonify, g
+from flask_login import login_required
 
 from cts import app, conf, version, db
 from cts.errors import NotFound, Forbidden
 from cts.models import Compose, Tag
 from cts.api_utils import pagination_metadata, filter_composes, filter_tags
-from cts.auth import requires_role, login_required, require_scopes, has_role
+from cts.auth import requires_role, require_scopes, has_role
 
 
 api_v1 = {
