@@ -217,6 +217,9 @@ class TagAPI(MethodView):
         :jsonparam str name: Tag name.
         :jsonparam str description: Tag description.
         :jsonparam str documentation: Link to full documentation about tag.
+        :jsonparam str user_data: Optional data stored in the tag change history
+            for this tag change. For example URL to ticket requesting this tag
+            change.
 
         :statuscode 200: Tag created and returned.
         :statuscode 400: Request not in valid format.
@@ -238,8 +241,10 @@ class TagAPI(MethodView):
         if not documentation:
             raise ValueError('Tag "documentation" is not defined.')
 
+        user_data = data.get("user_data", None)
         t = Tag.create(
-            db.session, name=name, description=description, documentation=documentation
+            db.session, g.user.username, name=name, description=description,
+            documentation=documentation, user_data=user_data
         )
         db.session.commit()
         return jsonify(t.json()), 200
@@ -258,6 +263,9 @@ class TagAPI(MethodView):
         :jsonparam str action: One of: "add_tagger", "remove_tagger", "add_untagger",
             "remove_untagger".  If not set, do not edit taggers/untaggers.
         :jsonparam str username: Username of tagger/untagger.
+        :jsonparam str user_data: Optional data stored in the tag change history
+            for this tag change. For example URL to ticket requesting this tag
+            change.
 
         :statuscode 200: Tag updated and returned.
         :statuscode 401: User is unathorized.
@@ -290,7 +298,8 @@ class TagAPI(MethodView):
             username = data.get("username", None)
             if not username:
                 raise ValueError('"username" is not defined.')
-            r = getattr(t, action)(username)
+            user_data = data.get("user_data", None)
+            r = getattr(t, action)(g.user.username, username, user_data)
             if not r:
                 raise ValueError('User does not exist')
         db.session.commit()

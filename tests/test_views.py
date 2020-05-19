@@ -264,6 +264,7 @@ class TestViews(ViewBaseTest):
                 "name": "periodic",
                 "description": "Periodic compose",
                 "documentation": "Foo",
+                "user_data": "Ticket #123",
             }
             rv = self.client.post('/api/1/tags/', json=req)
             data = json.loads(rv.get_data(as_text=True))
@@ -312,6 +313,7 @@ class TestViews(ViewBaseTest):
                 "name": "periodic-update",
                 "description": "Periodic compose update",
                 "documentation": "Foo update",
+                "user_data": "Ticket #124",
             }
             rv = self.client.patch('/api/1/tags/1', json=req)
             data = json.loads(rv.get_data(as_text=True))

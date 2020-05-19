@@ -20,6 +20,8 @@
 #
 # Written by Jan Kaluza <jkaluza@redhat.com>
 
+from mock import ANY
+
 from cts import db
 from cts.models import User, Compose, Tag
 
@@ -95,20 +97,21 @@ class TestTagModel(ModelsBaseTest):
 
     def setup_composes(self):
         self.compose = Compose.create(db.session, "odcs", self.ci)[0]
+        self.admin = User.create_user("admin")
         self.me = User.create_user("me")
         self.you = User.create_user("you")
         t = Tag.create(
-            db.session, name="periodic", description="Periodic compose",
+            db.session, "admin", name="periodic", description="Periodic compose",
             documentation="http://localhost/"
         )
-        t.add_tagger("me")
-        t.add_tagger("you")
-        t.add_untagger("me")
+        t.add_tagger("admin", "me")
+        t.add_tagger("admin", "you")
+        t.add_untagger("admin", "me")
         t = Tag.create(
-            db.session, name="nightly", description="Nightly compose",
+            db.session, "admin", name="nightly", description="Nightly compose",
             documentation="http://localhost/"
         )
-        t.add_tagger("me")
+        t.add_tagger("admin", "me")
         db.session.commit()
 
     def test_add_remove_tagger(self):
@@ -116,50 +119,90 @@ class TestTagModel(ModelsBaseTest):
         self.assertEqual(t.taggers, [self.me, self.you])
 
         # Remove "me".
-        r = t.remove_tagger("me")
+        r = t.remove_tagger("admin", "me", "Ticket #123")
         self.assertEqual(r, True)
         self.assertEqual(t.taggers, [self.you])
 
         # Remove "me" again to test it does not break.
-        r = t.remove_tagger("me")
+        r = t.remove_tagger("admin", "me")
         self.assertEqual(r, True)
         self.assertEqual(t.taggers, [self.you])
 
         # Remove "me" again to test it does not break.
-        r = t.remove_tagger("me")
+        r = t.remove_tagger("admin", "me")
         self.assertEqual(r, True)
         self.assertEqual(t.taggers, [self.you])
 
         # Add non-existing.
-        r = t.add_tagger("non-existing")
+        r = t.add_tagger("admin", "non-existing")
         self.assertEqual(r, False)
         self.assertEqual(t.taggers, [self.you])
+
+        expected_tag_changes = [
+            {
+                'action': 'created',
+                'message': None,
+                'user': 'admin',
+                'user_data': None,
+                'time': ANY,
+            },
+            {
+                'action': 'add_tagger',
+                'message': 'Tagger permission granted to user "me".',
+                'user': 'admin',
+                'user_data': None,
+                'time': ANY,
+            },
+            {
+                'action': 'add_tagger',
+                'message': 'Tagger permission granted to user "you".',
+                'user': 'admin',
+                'user_data': None,
+                'time': ANY,
+            },
+            {
+                'action': 'add_untagger',
+                'message': 'Untagger permission granted to user "me".',
+                'user': 'admin',
+                'user_data': None,
+                'time': ANY,
+            },
+            {
+                'action': 'remove_tagger',
+                'message': 'Tagger permission removed from user "me".',
+                'user': 'admin',
+                'user_data': 'Ticket #123',
+                'time': ANY,
+            },
+        ]
+        tag_changes = [change.json() for change in t.changes()]
+        self.assertEqual(tag_changes, expected_tag_changes)
 
     def test_add_remove_untagger(self):
         t = Tag.get_by_name("periodic")
 
         # Add "me"
-        r = t.add_untagger("you")
+        r = t.add_untagger("admin", "you")
         self.assertEqual(r, True)
         self.assertEqual(t.untaggers, [self.me, self.you])
 
         # Remove "me".
-        r = t.remove_untagger("me")
+        r = t.remove_untagger("admin", "me")
         self.assertEqual(r, True)
         self.assertEqual(t.untaggers, [self.you])
 
         # Remove "me" again to test it does not break.
-        r = t.remove_untagger("me")
+        r = t.remove_untagger("admin", "me")
         self.assertEqual(r, True)
         self.assertEqual(t.untaggers, [self.you])
 
         # Remove "me" again to test it does not break.
-        r = t.remove_untagger("me")
+        r = t.remove_untagger("admin", "me")
         self.assertEqual(r, True)
         self.assertEqual(t.untaggers, [self.you])
 
         # Add non-existing.
-        r = t.add_untagger("non-existing")
+        r = t.add_untagger("admin", "non-existing")
         self.assertEqual(r, False)
         self.assertEqual(t.untaggers, [self.you])
 

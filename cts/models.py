@@ -28,6 +28,7 @@
 import json
 from flask_login import UserMixin
 from productmd import ComposeInfo
+from datetime import datetime
 
 from cts import db
 from cts.events import cache_composes_if_state_changed
@@ -55,6 +56,19 @@ def commit_on_success(func):
         finally:
             db.session.commit()
     return _decorator
+
+
+def _utc_datetime_to_iso(datetime_object):
+    """
+    Takes a UTC datetime object and returns an ISO formatted string
+    :param datetime_object: datetime.datetime
+    :return: string with datetime in ISO format
+    """
+    if datetime_object:
+        # Converts the datetime to ISO 8601
+        return datetime_object.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    return None
 
 
 class CTSBase(db.Model):
@@ -113,6 +127,42 @@ untaggers = db.Table(
 )
 
 
+class TagChange(CTSBase):
+    __tablename__ = "tag_changes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Time when this Tag change happened
+    time = db.Column(db.DateTime, nullable=False)
+    # Tag associated with this record.
+    tag_id = db.Column(db.Integer, db.ForeignKey("tags.id"), nullable=False)
+    # Action: "created", "add_tagger", "remove_tagger", "add_tagger", "remove_untagger"
+    action = db.Column(db.String)
+    # User which did the Tag change.
+    user_id = db.Column("user_id", db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user = db.relationship("User", backref="users", lazy=False)
+    # Automatic message with more information about this change.
+    message = db.Column(db.String, nullable=True)
+    # User data associated with this change further describing it.
+    user_data = db.Column(db.String, nullable=True)
+
+    @classmethod
+    def create(cls, session, tag, username, **kwargs):
+        user = User.find_user_by_name(username)
+        tag_change = cls(time=datetime.utcnow(), tag_id=tag.id, user_id=user.id, **kwargs)
+        session.add(tag_change)
+        session.commit()
+        return tag_change
+
+    def json(self):
+        return {
+            "time": _utc_datetime_to_iso(self.time),
+            "action": self.action,
+            "user": self.user.username,
+            "message": self.message,
+            "user_data": self.user_data,
+        }
+
+
 class Tag(CTSBase):
     __tablename__ = "tags"
 
@@ -128,9 +178,12 @@ class Tag(CTSBase):
     untaggers = db.relationship("User", secondary=untaggers)
 
     @classmethod
-    def create(cls, session, **kwargs):
+    def create(cls, session, logged_user, user_data=None, **kwargs):
         tag = cls(**kwargs)
         session.add(tag)
+        session.commit()
+
+        TagChange.create(session, tag, logged_user, action="created", user_data=user_data)
         return tag
 
     @classmethod
@@ -145,25 +198,34 @@ class Tag(CTSBase):
         except IndexError:
             return None
 
-    def add_tagger(self, username):
+    def add_tagger(self, logged_user, username, user_data=None):
         """
         Grant `username` permissions to tag the compose with this tag.
 
-        :param str username: Username
+        :param str logged_user: Username of the logged user.
+        :param str username: Username to add permission to.
+        :param str user_data: User data to add to TagChange record.
         :return bool: True if permissions granted, False if user does not exist.
         """
         u = User.find_user_by_name(username)
         if not u:
             return False
 
+        TagChange.create(
+            db.session, self, logged_user, action="add_tagger", user_data=user_data,
+            message='Tagger permission granted to user "%s".' % username,
+        )
         self.taggers.append(u)
+
         return True
 
-    def remove_tagger(self, username):
+    def remove_tagger(self, logged_user, username, user_data=None):
         """
         Revoke `username` permissions to tag the compose with this tag.
 
-        :param str username: Username
+        :param str logged_user: Username of the logged user.
+        :param str username: Username to remove permission from.
+        :param str user_data: User data to add to TagChange record.
         :return bool: True if permissions revoked, False if user does not exist.
         """
         u = User.find_user_by_name(username)
@@ -175,27 +237,42 @@ class Tag(CTSBase):
         except ValueError:
             # User is not there, so return True.
             return True
+
+        TagChange.create(
+            db.session, self, logged_user, action="remove_tagger", user_data=user_data,
+            message='Tagger permission removed from user "%s".' % username,
+        )
+
         return True
 
-    def add_untagger(self, username):
+    def add_untagger(self, logged_user, username, user_data=None):
         """
         Grant `username` permissions to untag the compose with this tag.
 
-        :param str username: Username
+        :param str logged_user: Username of the logged user.
+        :param str username: Username to add permission to.
+        :param str user_data: User data to add to TagChange record.
         :return bool: True if permissions granted, False if user does not exist.
         """
         u = User.find_user_by_name(username)
         if not u:
             return False
 
+        TagChange.create(
+            db.session, self, logged_user, action="add_untagger", user_data=user_data,
+            message='Untagger permission granted to user "%s".' % username,
+        )
+
         self.untaggers.append(u)
         return True
 
-    def remove_untagger(self, username):
+    def remove_untagger(self, logged_user, username, user_data=None):
         """
         Revoke `username` permissions to untag the compose with this tag.
 
-        :param str username: Username
+        :param str logged_user: Username of the logged user.
+        :param str username: Username to remove permission from.
+        :param str user_data: User data to add to TagChange record.
         :return bool: True if permissions revoked, False if user does not exist.
         """
         u = User.find_user_by_name(username)
@@ -207,7 +284,20 @@ class Tag(CTSBase):
         except ValueError:
             # User is not there, so return True.
             return True
+
+        TagChange.create(
+            db.session, self, logged_user, action="remove_untagger", user_data=user_data,
+            message='Untagger permission removed from user "%s".' % username,
+        )
+
         return True
+
+    def changes(self):
+        return (
+            db.session.query(TagChange).filter_by(tag_id=self.id)
+            .order_by(TagChange.id)
+            .all()
+        )
 
     def json(self):
         return {
