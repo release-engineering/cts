@@ -23,11 +23,11 @@
 import json
 import unittest
 
-from mock import patch
+from mock import patch, ANY
 
 from cts import conf
 from cts import db
-from cts.models import Compose
+from cts.models import Compose, User, Tag
 from utils import ModelsBaseTest
 
 try:
@@ -69,7 +69,7 @@ class TestRHMsgSendMessageWhenComposeIsCreated(ModelsBaseTest):
         compose = Compose.create(db.session, "odcs", self.ci)[0]
 
         self.assertEqual(
-            json.dumps({'event': 'state-changed', 'compose': compose.json()}),
+            json.dumps({'event': 'compose-created', 'compose': compose.json()}),
             Message.return_value.body)
 
         producer_send = AMQProducer.return_value.__enter__.return_value.send
@@ -103,7 +103,83 @@ class TestFedoraMessagingSendMessageWhenComposeIsCreated(ModelsBaseTest):
         compose = Compose.create(db.session, "odcs", self.ci)[0]
 
         Message.assert_called_once_with(
-            topic="cts.compose.state-changed",
-            body={'event': 'state-changed', 'compose': compose.json()})
+            topic="cts.compose-created",
+            body={'event': 'compose-created', 'compose': compose.json()})
 
         publish.assert_called_once_with(Message.return_value)
+
+
+@patch("cts.messaging.publish")
+class TestMessaging(ModelsBaseTest):
+    """Test send message when compose is created"""
+
+    disable_event_handlers = False
+
+    def setUp(self):
+        super(TestMessaging, self).setUp()
+
+        # Real lock is not required for running tests
+        self.mock_lock = patch('threading.Lock')
+        self.mock_lock.start()
+
+    def tearDown(self):
+        super(TestMessaging, self).tearDown()
+        self.mock_lock.stop()
+
+    def setup_composes(self):
+        self.compose = Compose.create(db.session, "odcs", self.ci)[0]
+        self.me = User.create_user("me")
+        Tag.create(
+            db.session, "me", name="periodic", description="Periodic compose",
+            documentation="http://localhost/"
+        )
+        Tag.create(
+            db.session, "me", name="nightly", description="Nightly compose",
+            documentation="http://localhost/"
+        )
+
+    def test_message_compose_create(self, publish):
+        compose = Compose.create(db.session, "odcs", self.ci)[0]
+        db.session.commit()
+
+        publish.assert_called_once_with([{
+            'event': 'compose-created',
+            'compose': compose.json()
+        }])
+
+    def test_message_compose_tag(self, publish):
+        self.compose.tag("periodic")
+        self.compose.tag("nightly")
+        db.session.commit()
+
+        publish.assert_called_once_with([
+            {
+                'event': 'compose-tagged',
+                'tag': 'periodic',
+                'compose': ANY
+            },
+            {
+                'event': 'compose-tagged',
+                'tag': 'nightly',
+                'compose': ANY
+            },
+        ])
+
+    def test_message_compose_untag(self, publish):
+        self.test_message_compose_tag()
+        self.compose.untag("periodic")
+        self.compose.untag("nightly")
+        db.session.commit()
+
+        publish.assert_called_once_with([
+            {
+                'event': 'compose-untagged',
+                'tag': 'periodic',
+                'compose': ANY
+            },
+            {
+                'event': 'compose-untagged',
+                'tag': 'nightly',
+                'compose': ANY
+            },
+        ])
