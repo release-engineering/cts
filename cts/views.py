@@ -27,10 +27,10 @@ from flask.views import MethodView
 from flask import request, jsonify, g
 
 from cts import app, conf, version, db
-from cts.errors import NotFound
+from cts.errors import NotFound, Forbidden
 from cts.models import Compose, Tag
 from cts.api_utils import pagination_metadata, filter_composes, filter_tags
-from cts.auth import requires_role, login_required, require_scopes
+from cts.auth import requires_role, login_required, require_scopes, has_role
 
 
 api_v1 = {
@@ -42,9 +42,15 @@ api_v1 = {
         }
     },
     'compose': {
-        'url': '/api/1/composes/<int:id>',
+        'url': '/api/1/composes/<id>',
         'options': {
             'methods': ['GET'],
+        }
+    },
+    'compose_edit': {
+        'url': '/api/1/composes/<id>',
+        'options': {
+            'methods': ['PATCH'],
         }
     },
     'composes_post': {
@@ -145,6 +151,59 @@ class CTSAPI(MethodView):
 
         ci = Compose.create(db.session, g.user.username, ci)[1]
         return jsonify(json.loads(ci.dumps())), 200
+
+    @login_required
+    @require_scopes('edit-compose')
+    def patch(self, id):
+        """ Change the compose metadata.
+
+        :jsonparam str action: One of: "tag", "untag".
+        :jsonparam str tag: Tag to use.
+
+        :statuscode 200: Compose updated and returned.
+        :statuscode 401: User is unathorized for this change.
+        :statuscode 404: Compose not found.
+        """
+        compose = Compose.query.filter_by(id=id).first()
+        if not compose:
+            raise NotFound('No such compose found.')
+
+        data = request.get_json(force=True)
+        if not data:
+            raise ValueError('No JSON PATCH data submitted.')
+
+        action = data.get("action", None)
+        if action is None:
+            raise ValueError('No "action" field in JSON PATCH data.')
+
+        if action in ["tag", "untag"]:
+            tag_name = data.get("tag", None)
+            if not tag_name:
+                raise ValueError('No "tag" field in JSON PATCH data.')
+            tag = Tag.get_by_name(tag_name)
+            if not tag:
+                raise ValueError('Tag "%s" does not exist' % tag_name)
+
+            is_admin = has_role("admins")
+            if action == "tag":
+                if g.user not in tag.taggers and not is_admin:
+                    raise Forbidden(
+                        'User "%s" does not have "taggers" permission for tag '
+                        '"%s".' % (g.user.username, tag_name)
+                    )
+                compose.tag(tag_name)
+            else:
+                if g.user not in tag.untaggers and not is_admin:
+                    raise Forbidden(
+                        'User "%s" does not have "taggers" permission for tag '
+                        '"%s".' % (g.user.username, tag_name)
+                    )
+                compose.untag(tag_name)
+        else:
+            raise ValueError("Unknown action.")
+
+        db.session.commit()
+        return jsonify(compose.json()), 200
 
 
 class AboutAPI(MethodView):

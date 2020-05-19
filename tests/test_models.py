@@ -45,6 +45,7 @@ class TestComposeModel(ModelsBaseTest):
         c = composes[0]
         expected_json = {
             "builder": "odcs",
+            "tags": [],
             "compose_info": {
                 "header": {
                     "type": "productmd.composeinfo",

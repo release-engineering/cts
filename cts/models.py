@@ -413,7 +413,8 @@ class Compose(CTSBase):
 
         return {
             "compose_info": json.loads(ci.dumps()),
-            "builder": self.builder
+            "builder": self.builder,
+            "tags": [tag.name for tag in self.tags],
         }
 
     def tag(self, tag_name):

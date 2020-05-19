@@ -30,7 +30,7 @@ from mock import patch
 
 import cts.auth
 from cts import conf, db, app, login_manager, version
-from cts.models import Compose, User
+from cts.models import Compose, User, Tag
 
 from utils import ModelsBaseTest
 
@@ -395,3 +395,152 @@ class TestViews(ViewBaseTest):
         self.assertEqual(data["error"], "Bad Request")
         self.assertEqual(data["status"], 400)
         self.assertTrue("Unknown action." in data["message"])
+
+
+class TestViewsComposeTagging(ViewBaseTest):
+    maxDiff = None
+
+    def setup_composes(self):
+        User.create_user(username="root")
+        User.create_user(username="odcs")
+        t = Tag.create(
+            db.session, "root", name="periodic", description="Periodic compose",
+            documentation="http://localhost/"
+        )
+        t.add_tagger("root", "odcs")
+        t.add_untagger("root", "odcs")
+        self.c = Compose.create(db.session, "odcs", self.ci)[0]
+        db.session.commit()
+
+    def test_composes_patch_missing_action(self):
+        with self.test_request_context(user='odcs'):
+            req = {
+                "tag": "periodic"
+            }
+            rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(rv.status, '400 BAD REQUEST')
+        self.assertEqual(data["error"], "Bad Request")
+        self.assertEqual(data["status"], 400)
+        self.assertEqual(data["message"], 'No "action" field in JSON PATCH data.')
+
+    def test_composes_patch_missing_tag(self):
+        for action in ["tag", "untag"]:
+            with self.test_request_context(user='odcs'):
+                req = {
+                    "action": action,
+                }
+                rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
+                data = json.loads(rv.get_data(as_text=True))
+
+            self.assertEqual(rv.status, '400 BAD REQUEST')
+            self.assertEqual(data["error"], "Bad Request")
+            self.assertEqual(data["status"], 400)
+            self.assertEqual(data["message"], 'No "tag" field in JSON PATCH data.')
+
+    def test_composes_patch_wrong_action(self):
+        with self.test_request_context(user='odcs'):
+            req = {
+                "action": "not-existing",
+                "tag": "periodic"
+            }
+            rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(rv.status, '400 BAD REQUEST')
+        self.assertEqual(data["error"], "Bad Request")
+        self.assertEqual(data["status"], 400)
+        self.assertEqual(data["message"], 'Unknown action.')
+
+    def test_composes_patch_tag(self):
+        with self.test_request_context(user='odcs'):
+            req = {
+                "action": "tag",
+                "tag": "periodic"
+            }
+            rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(data["tags"], ["periodic"])
+
+    def test_composes_patch_tag_no_tagger(self):
+        with self.test_request_context(user='foo'):
+            req = {
+                "action": "tag",
+                "tag": "periodic"
+            }
+            rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
+        self.assertEqual(rv.status, '403 FORBIDDEN')
+
+    def test_composes_patch_tag_admin(self):
+        with self.test_request_context(user='root'):
+            req = {
+                "action": "tag",
+                "tag": "periodic"
+            }
+            rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(data["tags"], ["periodic"])
+
+    def test_composes_patch_tag_wrong_tag(self):
+        with self.test_request_context(user='odcs'):
+            req = {
+                "action": "tag",
+                "tag": "not-existing"
+            }
+            rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(rv.status, '400 BAD REQUEST')
+        self.assertEqual(data["error"], "Bad Request")
+        self.assertEqual(data["status"], 400)
+        self.assertEqual(data["message"], 'Tag "not-existing" does not exist')
+
+    def test_composes_patch_untag(self):
+        self.c.tag("periodic")
+        with self.test_request_context(user='odcs'):
+            req = {
+                "action": "untag",
+                "tag": "periodic"
+            }
+            rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(data["tags"], [])
+
+    def test_composes_patch_untag_no_untagger(self):
+        self.c.tag("periodic")
+        db.session.commit()
+        with self.test_request_context(user='foo'):
+            req = {
+                "action": "untag",
+                "tag": "periodic"
+            }
+            rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
+        self.assertEqual(rv.status, '403 FORBIDDEN')
+
+    def test_composes_patch_untag_admin(self):
+        self.c.tag("periodic")
+        db.session.commit()
+        with self.test_request_context(user='root'):
+            req = {
+                "action": "untag",
+                "tag": "periodic"
+            }
+            rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(data["tags"], [])
+
+    def test_composes_patch_untag_wrong_untag(self):
+        self.c.tag("periodic")
+        with self.test_request_context(user='odcs'):
+            req = {
+                "action": "untag",
+                "tag": "not-existing"
+            }
+            rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(rv.status, '400 BAD REQUEST')
+        self.assertEqual(data["error"], "Bad Request")
+        self.assertEqual(data["status"], 400)
+        self.assertEqual(data["message"], 'Tag "not-existing" does not exist')
