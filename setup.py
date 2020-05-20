@@ -51,7 +51,7 @@ setup(name='cts',
           'console_scripts': [
               'cts-frontend = cts.manage:runssl',
               'cts-gencert = cts.manage:generatelocalhostcert',
-              'cts-manager = cts.manage:cli',
+              'cts-manager = cts.manage:manager_wrapper',
               'cts-upgradedb = cts.manage:upgradedb',
           ],
       },
