@@ -6,6 +6,17 @@ import groovy.json.*
 // 'global' var to store git info
 def scmVars
 
+// CTS RPM dependencies
+def installDepsCmd = '''
+sudo dnf -y install \
+    python3-dogpile-cache \
+    python3-fedmsg \
+    python3-flask \
+    python3-prometheus_client \
+    python3-PyYAML \
+    python3-requests
+'''.trim()
+
 try { // massive try{} catch{} around the entire build for failure notifications
 
 node('master'){
