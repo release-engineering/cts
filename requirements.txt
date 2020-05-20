@@ -1,5 +1,3 @@
-futures
-funcsigs
 python-fedora
 sqlalchemy
 Flask
