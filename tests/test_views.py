@@ -135,6 +135,7 @@ class TestViews(ViewBaseTest):
 
     def setup_test_data(self):
         # Create two composes.
+        User.create_user(username="odcs")
         Compose.create(db.session, "odcs", self.ci)
         Compose.create(db.session, "odcs", self.ci)
 
@@ -341,7 +342,6 @@ class TestViews(ViewBaseTest):
 
     def test_tags_patch_actions(self):
         self.test_tags_post()
-        User.create_user(username="odcs")
         db.session.commit()
 
         for action in ["add_tagger", "remove_tagger", "add_untagger", "remove_untagger"]:
@@ -381,7 +381,6 @@ class TestViews(ViewBaseTest):
 
     def test_tags_patch_actions_unknown_action(self):
         self.test_tags_post()
-        User.create_user(username="odcs")
         db.session.commit()
         with self.test_request_context(user='root'):
             req = {
@@ -497,7 +496,7 @@ class TestViewsComposeTagging(ViewBaseTest):
         self.assertEqual(data["message"], 'Tag "not-existing" does not exist')
 
     def test_composes_patch_untag(self):
-        self.c.tag("periodic")
+        self.c.tag("odcs", "periodic")
         with self.test_request_context(user='odcs'):
             req = {
                 "action": "untag",
@@ -508,7 +507,7 @@ class TestViewsComposeTagging(ViewBaseTest):
         self.assertEqual(data["tags"], [])
 
     def test_composes_patch_untag_no_untagger(self):
-        self.c.tag("periodic")
+        self.c.tag("odcs", "periodic")
         db.session.commit()
         with self.test_request_context(user='foo'):
             req = {
@@ -519,7 +518,7 @@ class TestViewsComposeTagging(ViewBaseTest):
         self.assertEqual(rv.status, '403 FORBIDDEN')
 
     def test_composes_patch_untag_admin(self):
-        self.c.tag("periodic")
+        self.c.tag("odcs", "periodic")
         db.session.commit()
         with self.test_request_context(user='root'):
             req = {
@@ -531,7 +530,7 @@ class TestViewsComposeTagging(ViewBaseTest):
         self.assertEqual(data["tags"], [])
 
     def test_composes_patch_untag_wrong_untag(self):
-        self.c.tag("periodic")
+        self.c.tag("odcs", "periodic")
         with self.test_request_context(user='odcs'):
             req = {
                 "action": "untag",

@@ -159,6 +159,9 @@ class CTSAPI(MethodView):
 
         :jsonparam str action: One of: "tag", "untag".
         :jsonparam str tag: Tag to use.
+        :jsonparam str user_data: Optional data stored in the compose change history
+            for this compose change. For example URL to ticket requesting this compose
+            change.
 
         :statuscode 200: Compose updated and returned.
         :statuscode 401: User is unathorized for this change.
@@ -176,6 +179,8 @@ class CTSAPI(MethodView):
         if action is None:
             raise ValueError('No "action" field in JSON PATCH data.')
 
+        user_data = data.get("user_data", None)
+
         if action in ["tag", "untag"]:
             tag_name = data.get("tag", None)
             if not tag_name:
@@ -191,14 +196,14 @@ class CTSAPI(MethodView):
                         'User "%s" does not have "taggers" permission for tag '
                         '"%s".' % (g.user.username, tag_name)
                     )
-                compose.tag(tag_name)
+                compose.tag(g.user.username, tag_name, user_data)
             else:
                 if g.user not in tag.untaggers and not is_admin:
                     raise Forbidden(
                         'User "%s" does not have "taggers" permission for tag '
                         '"%s".' % (g.user.username, tag_name)
                     )
-                compose.untag(tag_name)
+                compose.untag(g.user.username, tag_name, user_data)
         else:
             raise ValueError("Unknown action.")
 

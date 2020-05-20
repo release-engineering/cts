@@ -23,7 +23,7 @@
 import json
 import unittest
 
-from mock import patch, ANY
+from mock import patch, ANY, call
 
 from cts import conf
 from cts import db
@@ -59,6 +59,7 @@ class TestRHMsgSendMessageWhenComposeIsCreated(ModelsBaseTest):
         self.mock_lock.stop()
 
     def setup_composes(self):
+        User.create_user(username="odcs")
         self.compose = Compose.create(db.session, "odcs", self.ci)[0]
         db.session.commit()
 
@@ -94,6 +95,7 @@ class TestFedoraMessagingSendMessageWhenComposeIsCreated(ModelsBaseTest):
         self.mock_lock.stop()
 
     def setup_composes(self):
+        User.create_user(username="odcs")
         self.compose = Compose.create(db.session, "odcs", self.ci)[0]
 
     @patch.object(conf, 'messaging_backend', new='fedora-messaging')
@@ -127,6 +129,7 @@ class TestMessaging(ModelsBaseTest):
         self.mock_lock.stop()
 
     def setup_composes(self):
+        User.create_user(username="odcs")
         self.compose = Compose.create(db.session, "odcs", self.ci)[0]
         self.me = User.create_user("me")
         Tag.create(
@@ -148,38 +151,40 @@ class TestMessaging(ModelsBaseTest):
         }])
 
     def test_message_compose_tag(self, publish):
-        self.compose.tag("periodic")
-        self.compose.tag("nightly")
+        self.compose.tag("odcs", "periodic")
+        self.compose.tag("odcs", "nightly")
         db.session.commit()
 
-        publish.assert_called_once_with([
-            {
-                'event': 'compose-tagged',
-                'tag': 'periodic',
-                'compose': ANY
-            },
-            {
-                'event': 'compose-tagged',
-                'tag': 'nightly',
-                'compose': ANY
-            },
-        ])
+        expected_call = call([{
+            'event': 'compose-tagged',
+            'tag': 'periodic',
+            'compose': ANY
+        }])
+        self.assertEqual(publish.mock_calls[0], expected_call)
+
+        expected_call = call([{
+            'event': 'compose-tagged',
+            'tag': 'nightly',
+            'compose': ANY
+        }])
+        self.assertEqual(publish.mock_calls[1], expected_call)
 
     def test_message_compose_untag(self, publish):
         self.test_message_compose_tag()
-        self.compose.untag("periodic")
-        self.compose.untag("nightly")
+        self.compose.untag("odcs", "periodic")
+        self.compose.untag("odcs", "nightly")
         db.session.commit()
 
-        publish.assert_called_once_with([
-            {
-                'event': 'compose-untagged',
-                'tag': 'periodic',
-                'compose': ANY
-            },
-            {
-                'event': 'compose-untagged',
-                'tag': 'nightly',
-                'compose': ANY
-            },
-        ])
+        expected_call = call([{
+            'event': 'compose-untagged',
+            'tag': 'periodic',
+            'compose': ANY
+        }])
+        self.assertEqual(publish.mock_calls[0], expected_call)
+
+        expected_call = call([{
+            'event': 'compose-untagged',
+            'tag': 'nightly',
+            'compose': ANY
+        }])
+        self.assertEqual(publish.mock_calls[1], expected_call)

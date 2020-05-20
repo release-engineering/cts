@@ -31,6 +31,7 @@ from utils import ModelsBaseTest
 class TestComposeModel(ModelsBaseTest):
 
     def test_create(self):
+        User.create_user(username="odcs")
         self.ci.release.is_layered = True
         self.ci.base_product.name = "base-product"
         self.ci.base_product.short = "bp"
@@ -80,6 +81,7 @@ class TestComposeModel(ModelsBaseTest):
 
     def test_create_respin(self):
         # Create for first time
+        User.create_user(username="odcs")
         Compose.create(db.session, "odcs", self.ci)
         db.session.expire_all()
 
@@ -97,6 +99,7 @@ class TestComposeModel(ModelsBaseTest):
 class TestTagModel(ModelsBaseTest):
 
     def setup_composes(self):
+        User.create_user(username="odcs")
         self.compose = Compose.create(db.session, "odcs", self.ci)[0]
         self.admin = User.create_user("admin")
         self.me = User.create_user("me")
@@ -222,7 +225,7 @@ class TestTagModel(ModelsBaseTest):
         self.assertEqual(self.compose.tags, [])
 
         # Tag with "periodic"
-        ret = self.compose.tag("periodic")
+        ret = self.compose.tag("odcs", "periodic", user_data="Ticket #123")
         db.session.commit()
         db.session.expire_all()
         self.compose = db.session.query(Compose).first()
@@ -230,19 +233,45 @@ class TestTagModel(ModelsBaseTest):
         self.assertEqual(ret, True)
 
         # Untag "nightly" which is not tagged yet.
-        ret = self.compose.untag("nightly")
+        ret = self.compose.untag("odcs", "nightly")
         self.assertEqual(ret, True)
         self.assertEqual(self.compose.tags, [Tag.get_by_name("periodic")])
 
         # Untag "periodic"
-        ret = self.compose.untag("periodic")
+        ret = self.compose.untag("odcs", "periodic")
         self.assertEqual(ret, True)
         self.assertEqual(self.compose.tags, [])
 
         # Tag with "non-existing"
-        ret = self.compose.tag("non-existing")
+        ret = self.compose.tag("odcs", "non-existing")
         self.assertEqual(ret, False)
         self.assertEqual(self.compose.tags, [])
+
+        expected_compose_changes = [
+            {
+                'action': 'created',
+                'message': None,
+                'time': ANY,
+                'user': 'odcs',
+                'user_data': None
+            },
+            {
+                'action': 'tagged',
+                'message': 'User "odcs" added "periodic" tag.',
+                'time': ANY,
+                'user': 'odcs',
+                'user_data': "Ticket #123"
+            },
+            {
+                'action': 'untagged',
+                'message': 'User "odcs" removed "periodic" tag.',
+                'time': ANY,
+                'user': 'odcs',
+                'user_data': None
+            }
+        ]
+        compose_changes = [change.json() for change in self.compose.changes()]
+        self.assertEqual(compose_changes, expected_compose_changes)
 
 
 class TestUserModel(ModelsBaseTest):

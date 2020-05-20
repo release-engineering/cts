@@ -139,7 +139,7 @@ class TagChange(CTSBase):
     action = db.Column(db.String)
     # User which did the Tag change.
     user_id = db.Column("user_id", db.Integer, db.ForeignKey("users.id"), nullable=False)
-    user = db.relationship("User", backref="users", lazy=False)
+    user = db.relationship("User", lazy=False)
     # Automatic message with more information about this change.
     message = db.Column(db.String, nullable=True)
     # User data associated with this change further describing it.
@@ -310,6 +310,44 @@ class Tag(CTSBase):
         }
 
 
+class ComposeChange(CTSBase):
+    __tablename__ = "compose_changes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Time when this Compose change happened.
+    time = db.Column(db.DateTime, nullable=False)
+    # Compose associated with this change.
+    compose_id = db.Column(db.Integer, db.ForeignKey("composes.id"), nullable=False)
+    # Action: "created", "tagged", "untagged"
+    action = db.Column(db.String)
+    # User which did the Compose change.
+    user_id = db.Column("user_id", db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user = db.relationship("User", lazy=False)
+    # Automatic message with more information about this change.
+    message = db.Column(db.String, nullable=True)
+    # User data associated with this change further describing it.
+    user_data = db.Column(db.String, nullable=True)
+
+    @classmethod
+    def create(cls, session, compose, username, **kwargs):
+        user = User.find_user_by_name(username)
+        compose_change = cls(
+            time=datetime.utcnow(), compose_id=compose.id, user_id=user.id, **kwargs
+        )
+        session.add(compose_change)
+        session.commit()
+        return compose_change
+
+    def json(self):
+        return {
+            "time": _utc_datetime_to_iso(self.time),
+            "action": self.action,
+            "user": self.user.username,
+            "message": self.message,
+            "user_data": self.user_data,
+        }
+
+
 class Compose(CTSBase):
     __tablename__ = "composes"
 
@@ -341,13 +379,14 @@ class Compose(CTSBase):
     tags = db.relationship("Tag", secondary=tags_to_composes)
 
     @classmethod
-    def create(cls, session, builder, ci):
+    def create(cls, session, builder, ci, user_data=None):
         """
         Creates new Compose and commits it to database ensuring that its ID is unique.
 
         :param session: SQLAlchemy session.
         :param str builder: Name of the user (service) building this compose.
         :param productmd.ComposeInfo ci: ComposeInfo metadata.
+        :param str user_data: Optional user data to add to ComposeChange record.
         :return tuple: (Compose, productmd.ComposeInfo) - tuple with newly created
             Compose and changed ComposeInfo metadata.
         """
@@ -392,6 +431,7 @@ class Compose(CTSBase):
             ci.compose.respin += 1
             ci.compose.id = ci.create_compose_id()
 
+        ComposeChange.create(session, compose, builder, action="created", user_data=user_data)
         return compose, ci
 
     def json(self, full=False):
@@ -417,25 +457,37 @@ class Compose(CTSBase):
             "tags": [tag.name for tag in self.tags],
         }
 
-    def tag(self, tag_name):
+    def tag(self, logged_user, tag_name, user_data=None):
         """
         Tag the compose with tag `tag_name.
 
+        :param str logged_user: Username of the logged user.
         :param str tag_name: Name of the tag.
+        :param str user_data: User data to add to ComposeChange record.
         :return bool: True if compose tagged, False if tag does not exist.
         """
         t = Tag.get_by_name(tag_name)
         if not t:
             return False
 
+        if t in self.tags:
+            # Tag is already added.
+            return True
+
+        ComposeChange.create(
+            db.session, self, logged_user, action="tagged", user_data=user_data,
+            message='User "%s" added "%s" tag.' % (logged_user, tag_name)
+        )
         self.tags.append(t)
         return True
 
-    def untag(self, tag_name):
+    def untag(self, logged_user, tag_name, user_data=None):
         """
         Remove the tag `tag_name from the compose.
 
+        :param str logged_user: Username of the logged user.
         :param str tag_name: Name of the tag.
+        :param str user_data: User data to add to ComposeChange record.
         :return bool: True if compose untagged, False if tag does not exist.
         """
         t = Tag.get_by_name(tag_name)
@@ -447,4 +499,16 @@ class Compose(CTSBase):
         except ValueError:
             # Tag is not there, so return True.
             return True
+
+        ComposeChange.create(
+            db.session, self, logged_user, action="untagged", user_data=user_data,
+            message='User "%s" removed "%s" tag.' % (logged_user, tag_name)
+        )
         return True
+
+    def changes(self):
+        return (
+            db.session.query(ComposeChange).filter_by(compose_id=self.id)
+            .order_by(ComposeChange.id)
+            .all()
+        )
