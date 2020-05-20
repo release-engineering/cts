@@ -9,4 +9,4 @@ Flask-Script
 Flask-Login < 0.5.0
 requests
 productmd
-pyldap
+python-ldap
