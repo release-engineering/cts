@@ -1,0 +1,13 @@
+*.pyc
+/.cache/
+/.coverage*
+/.tox/
+/build/
+/dist/
+/cts.egg-info/
+*swp
+tests/test_cts.db
+cts.db
+.vagrant
+.idea
+*.patch
