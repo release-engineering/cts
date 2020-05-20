@@ -100,7 +100,7 @@ class CTSAPI(MethodView):
         If ``id`` is set, only the compose defined by that ID is
         returned.
 
-        :query string id: Return only compose with this :ref:`id<id>`.
+        :query string id: Return only compose with this ID.
         :query string order_by: Order the composes by the given field. If ``-`` prefix is used,
             the order will be descending. The default value is ``-id``.
         :statuscode 200: Composes are returned.
@@ -157,7 +157,10 @@ class CTSAPI(MethodView):
     def patch(self, id):
         """ Change the compose metadata.
 
-        :jsonparam str action: One of: "tag", "untag".
+        :jsonparam str action: One of:
+
+            - ``tag`` - Add ``tag`` to compose.
+            - ``untag`` - Remove ``tag`` from compose.
         :jsonparam str tag: Tag to use.
         :jsonparam str user_data: Optional data stored in the compose change history
             for this compose change. For example URL to ticket requesting this compose
@@ -246,7 +249,7 @@ class TagAPI(MethodView):
         If ``id`` is set, only the tag defined by that ID is
         returned. If ``id`` is string, it is treated as tag name.
 
-        :query string id: Return only tag with this :ref:`id<id>` or :ref:`name<name>`.
+        :query string id: Return only tag with this :ref:`id<tag_id>` or :ref:`name<tag_name>`.
         :query string order_by: Order the tags by the given field. If ``-`` prefix is used,
             the order will be descending. The default value is ``-id``.
         :statuscode 200: Tags are returned.
@@ -319,13 +322,19 @@ class TagAPI(MethodView):
     def patch(self, id):
         """ Edit tag.
 
-        :query number id: :ref:`ID<id>` of the tag to edit.
-        :jsonparam str name: Tag name. If not set, keep original value.
-        :jsonparam str description: Tag description. If not set, keep original value.
-        :jsonparam str documentation: Link to full documentation about tag.
+        :query number id: :ref:`ID<tag_id>` of the tag to edit.
+        :jsonparam str name: Tag :ref:`name<tag_name>`. If not set, keep original value.
+        :jsonparam str description: Tag :ref:`description<tag_description>`. If not set, keep original value.
+        :jsonparam str documentation: Link to full :ref:`documentation<tag_documentation>` about tag.
             If not set, keep original value.
-        :jsonparam str action: One of: "add_tagger", "remove_tagger", "add_untagger",
-            "remove_untagger".  If not set, do not edit taggers/untaggers.
+        :jsonparam str action: Edit action. One of:
+
+            - ``add_tagger`` - Grant ``tagger`` permission to ``username``.
+            - ``remove_tagger`` - Remove ``tagger`` permission from ``username``.
+            - ``add_untagger`` - Grant ``untagger`` permission to ``username``.
+            - ``remove_untagger`` - Remove ``untagger`` permission from ``username``.
+
+            If not set, do not edit taggers/untaggers.
         :jsonparam str username: Username of tagger/untagger.
         :jsonparam str user_data: Optional data stored in the tag change history
             for this tag change. For example URL to ticket requesting this tag

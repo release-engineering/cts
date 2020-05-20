@@ -1,0 +1,28 @@
+.. CTS documentation master file, created by
+   sphinx-quickstart on Wed May 10 13:18:15 2017.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root `toctree` directive.
+
+==============================
+Compose Tracking Service (CTS)
+==============================
+
+The CTS (Compose Tracking Service) is a service allowing to generate temporary
+compose (mainly the RPM repository) with packages from Koji using the REST API.
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+
+   about
+   api
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
+
+
+.. _CTS: https://pagure.io/cts
