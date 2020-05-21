@@ -35,8 +35,6 @@ RUN cd /etc/yum.repos.d/ \
     && dnf -y clean all \
     && rm -f /tmp/*
 
-RUN mkdir -p /usr/share/cts && cp contrib/cts.wsgi /usr/share/cts/
-
 RUN if [ "$cacert_url" != "undefined" ]; then \
         cd /etc/pki/ca-trust/source/anchors \
         && curl -O --insecure $cacert_url \
@@ -44,6 +42,9 @@ RUN if [ "$cacert_url" != "undefined" ]; then \
     fi
 
 COPY . .
+
+RUN mkdir -p /usr/share/cts && cp contrib/cts.wsgi /usr/share/cts/
+
 RUN pip3 install . --no-deps
 
 WORKDIR /tmp
