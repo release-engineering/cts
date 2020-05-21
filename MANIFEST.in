@@ -1,0 +1,8 @@
+global-exclude *.pyc *.pyo
+include README.md
+include requirements.txt
+include test-requirements.txt
+recursive-include conf config.py
+recursive-include docs *.txt *.rst *.md
+recursive-include cts *
+recursive-include tests *
