@@ -7,8 +7,8 @@
 Compose Tracking Service (CTS)
 ==============================
 
-The CTS (Compose Tracking Service) is a service allowing to generate temporary
-compose (mainly the RPM repository) with packages from Koji using the REST API.
+Compose Tracking Service (CTSA) is a small service storing specific metadata about each Pungi Compose.
+It provides a REST API to manipulate these metadata and sends UMB messages on every change of these metadata.
 
 .. toctree::
    :maxdepth: 2
