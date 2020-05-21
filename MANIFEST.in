@@ -6,3 +6,4 @@ recursive-include conf config.py
 recursive-include docs *.txt *.rst *.md
 recursive-include cts *
 recursive-include tests *
+recursive-include contrib *
