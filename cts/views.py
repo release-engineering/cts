@@ -133,7 +133,7 @@ class CTSAPI(MethodView):
         :jsonparam ComposeInfo compose_info: Compose metadata in productmd.ComposeInfo format.
 
         :statuscode 200: Compose request created and updated ComposeInfo returned.
-        :statuscode 401: Request not in valid format.
+        :statuscode 400: Request not in valid format.
         :statuscode 401: User is unathorized.
         """
         data = request.get_json(force=True)
