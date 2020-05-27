@@ -24,14 +24,16 @@
 import json
 from productmd import ComposeInfo
 from flask.views import MethodView
-from flask import request, jsonify, g
+from flask import request, jsonify, g, Response
 from flask_login import login_required
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from cts import app, conf, version, db
 from cts.errors import NotFound, Forbidden
 from cts.models import Compose, Tag
 from cts.api_utils import pagination_metadata, filter_composes, filter_tags
 from cts.auth import requires_role, require_scopes, has_role
+from cts.metrics import registry
 
 
 api_v1 = {
@@ -87,6 +89,12 @@ api_v1 = {
     },
     'about': {
         'url': '/api/1/about/',
+        'options': {
+            'methods': ['GET']
+        }
+    },
+    'metrics': {
+        'url': '/api/1/metrics/',
         'options': {
             'methods': ['GET']
         }
@@ -243,6 +251,16 @@ class AboutAPI(MethodView):
         return jsonify(json), 200
 
 
+class MetricsAPI(MethodView):
+    def get(self):
+        """
+        Returns the Prometheus metrics.
+
+        :statuscode 200: Prometheus metrics returned.
+        """
+        return Response(generate_latest(registry), content_type=CONTENT_TYPE_LATEST)
+
+
 class TagAPI(MethodView):
     def get(self, id):
         """ Returns tags.
@@ -385,6 +403,7 @@ def register_api_v1():
     composes_view = CTSAPI.as_view('composes')
     tags_view = TagAPI.as_view('tags')
     about_view = AboutAPI.as_view('about')
+    metrics_view = MetricsAPI.as_view('metrics')
     for key, val in api_v1.items():
         if key.startswith("compose"):
             app.add_url_rule(val['url'],
@@ -400,6 +419,11 @@ def register_api_v1():
             app.add_url_rule(val['url'],
                              endpoint=key,
                              view_func=about_view,
+                             **val['options'])
+        elif key.startswith("metrics"):
+            app.add_url_rule(val['url'],
+                             endpoint=key,
+                             view_func=metrics_view,
                              **val['options'])
         else:
             raise ValueError("Unhandled API key: %s." % key)

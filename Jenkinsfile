@@ -65,7 +65,8 @@ node('fedora-29') {
             python3-kobo-rpmlib \
             python3-defusedxml \
             python3-tox \
-            python3-productmd
+            python3-productmd \
+            python3-prometheus_client
         '''
         sh 'CTS_DEVELOPER_ENV=1 make -C docs html'
         archiveArtifacts artifacts: 'docs/_build/html/**'
