@@ -51,9 +51,10 @@ def _umb_send_msg(msgs):
         'trusted_certificates': conf.messaging_ca_cert,
     }
     with AMQProducer(**config) as producer:
-        producer.through_topic(conf.messaging_topic)
-
         for msg in msgs:
+            event = msg.get('event', 'event')
+            topic = "%s%s" % (conf.messaging_topic_prefix, event)
+            producer.through_topic(topic)
             outgoing_msg = proton.Message()
             outgoing_msg.body = json.dumps(msg)
             producer.send(outgoing_msg)
@@ -65,10 +66,8 @@ def _fedora_messaging_send_msg(msgs):
     config.conf.setup_logging()
 
     for msg in msgs:
-        # "event" is typically just "state-changed"
         event = msg.get('event', 'event')
-        topic = "cts.%s" % event
-
+        topic = "%s%s" % (conf.messaging_topic_prefix, event)
         api.publish(api.Message(topic=topic, body=msg))
 
 

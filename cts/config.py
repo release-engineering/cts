@@ -156,13 +156,9 @@ class Config(object):
             'desc': 'Path to trusted CA certificate bundle.'},
         'messaging_topic_prefix': {
             'type': str,
-            'default': '',
-            'desc': 'Prefix for MESSAGING_TOPIC and INTERNAL_MESSAGING_TOPIC.'
+            'default': 'cts.',
+            'desc': 'Prefix for AMQP or fedora-messaging messages.'
         },
-        'messaging_topic': {
-            'type': str,
-            'default': '',
-            'desc': 'Messaging topic to which messages are sent.'},
         'oidc_base_namespace': {
             'type': str,
             'default': 'https://pagure.io/cts/',
