@@ -105,7 +105,7 @@ class User(CTSBase, UserMixin):
 
 tags_to_composes = db.Table(
     "tags_to_composes",
-    db.Column("compose_id", db.Integer, db.ForeignKey("composes.id"), nullable=False),
+    db.Column("compose_id", db.String, db.ForeignKey("composes.id"), nullable=False),
     db.Column("tag_id", db.Integer, db.ForeignKey("tags.id"), nullable=False),
     db.UniqueConstraint("compose_id", "tag_id", name="unique_tags"),
 )
@@ -317,7 +317,7 @@ class ComposeChange(CTSBase):
     # Time when this Compose change happened.
     time = db.Column(db.DateTime, nullable=False)
     # Compose associated with this change.
-    compose_id = db.Column(db.Integer, db.ForeignKey("composes.id"), nullable=False)
+    compose_id = db.Column(db.String, db.ForeignKey("composes.id"), nullable=False)
     # Action: "created", "tagged", "untagged"
     action = db.Column(db.String)
     # User which did the Compose change.

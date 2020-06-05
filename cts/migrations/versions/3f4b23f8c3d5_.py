@@ -18,7 +18,7 @@ def upgrade():
     op.create_table('compose_changes',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('time', sa.DateTime(), nullable=False),
-    sa.Column('compose_id', sa.Integer(), nullable=False),
+    sa.Column('compose_id', sa.String(), nullable=False),
     sa.Column('action', sa.String(), nullable=True),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('message', sa.String(), nullable=True),

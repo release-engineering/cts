@@ -31,7 +31,7 @@ def upgrade():
     sa.UniqueConstraint('user_id', 'tag_id', name='unique_taggers')
     )
     op.create_table('tags_to_composes',
-    sa.Column('compose_id', sa.Integer(), nullable=False),
+    sa.Column('compose_id', sa.String(), nullable=False),
     sa.Column('tag_id', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['compose_id'], ['composes.id'], ),
     sa.ForeignKeyConstraint(['tag_id'], ['tags.id'], ),
