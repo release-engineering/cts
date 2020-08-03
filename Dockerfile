@@ -33,6 +33,7 @@ RUN cd /etc/yum.repos.d/ \
         python3-flask-script \
         python3-flask-login \
         python3-prometheus_client \
+    && dnf -v -y install net-tools iproute iputils traceroute \
     && dnf -y clean all \
     && rm -f /tmp/*
 
