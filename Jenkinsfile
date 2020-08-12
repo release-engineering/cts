@@ -107,7 +107,7 @@ node('fedora-29') {
     }
     if (scmVars.GIT_BRANCH == 'origin/master') {
         stage('Publish Docs') {
-            sshagent (credentials: ['pagure-greenwave-deploy-key']) {
+            sshagent (credentials: ['pagure-cts-deploy-key']) {
                 sh '''
                 mkdir -p ~/.ssh/
                 touch ~/.ssh/known_hosts
