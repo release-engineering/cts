@@ -154,6 +154,15 @@ class TestViews(ViewBaseTest):
         self.assertEqual(data["status"], 400)
         self.assertTrue(data["message"].find("Failed to decode JSON object") != -1)
 
+    def test_composes_get(self):
+        self.ci.compose.date = "20200518"
+        Compose.create(db.session, "odcs", self.ci)
+        with self.test_request_context(user='odcs'):
+            rv = self.client.get('/api/1/composes/?date=20200518')
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(len(data["items"]), 1)
+
     def test_composes_post(self):
         with self.test_request_context(user='odcs'):
             rv = self.client.post(
@@ -409,6 +418,7 @@ class TestViewsComposeTagging(ViewBaseTest):
         t.add_tagger("root", "odcs")
         t.add_untagger("root", "odcs")
         self.c = Compose.create(db.session, "odcs", self.ci)[0]
+        Compose.create(db.session, "odcs", self.ci)
         db.session.commit()
 
     def test_composes_patch_missing_action(self):
@@ -461,6 +471,11 @@ class TestViewsComposeTagging(ViewBaseTest):
             rv = self.client.patch('/api/1/composes/Fedora-Rawhide-20200517.n.1', json=req)
             data = json.loads(rv.get_data(as_text=True))
         self.assertEqual(data["tags"], ["periodic"])
+
+        with self.test_request_context(user='odcs'):
+            rv = self.client.get('/api/1/composes/?tag=periodic')
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(len(data["items"]), 1)
 
     def test_composes_patch_tag_no_tagger(self):
         with self.test_request_context(user='foo'):

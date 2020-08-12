@@ -110,6 +110,23 @@ class CTSAPI(MethodView):
         returned.
 
         :query string id: Return only compose with this ID.
+        :query string date: Return only composes with this ComposeInfo date value.
+        :query string respin: Return only composes with this ComposeInfo respin value.
+        :query string type: Return only composes with this ComposeInfo type value.
+        :query string label: Return only composes with this ComposeInfo label value.
+        :query string final: Return only composes with this ComposeInfo final value.
+        :query string release_name: Return only composes with this ComposeInfo release name value.
+        :query string release_version: Return only composes with this ComposeInfo release version value.
+        :query string release_short: Return only composes with this ComposeInfo release short value.
+        :query string release_is_layered: Return only composes with this ComposeInfo release is_layered value.
+        :query string release_type: Return only composes with this ComposeInfo release type value.
+        :query string release_internal: Return only composes with this ComposeInfo release internal value.
+        :query string base_product_name: Return only composes with this ComposeInfo base_product name value.
+        :query string base_product_short: Return only composes with this ComposeInfo base_product short value.
+        :query string base_product_version: Return only composes with this ComposeInfo base_product version value.
+        :query string base_product_type: Return only composes with this ComposeInfo base_product type value.
+        :query string builder: Return only composes imported by this builder username.
+        :query list tag: Return only composes tagged by one of these tags.
         :query string order_by: Order the composes by the given field. If ``-`` prefix is used,
             the order will be descending. The default value is ``-id``.
         :statuscode 200: Composes are returned.

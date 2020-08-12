@@ -109,7 +109,13 @@ def filter_composes(flask_request):
     """
     search_query = dict()
 
-    for key in ['id']:
+    allowed_keys = [
+        "id", "date", "respin", "type", "label", "final", "release_name",
+        "release_version", "release_short", "release_is_layered", "release_type",
+        "release_internal", "base_product_name", "base_product_short",
+        "base_product_version", "base_product_type", "builder"
+    ]
+    for key in allowed_keys:
         if flask_request.args.get(key, None):
             search_query[key] = flask_request.args[key]
 
@@ -117,6 +123,12 @@ def filter_composes(flask_request):
 
     if search_query:
         query = query.filter_by(**search_query)
+
+    tags = flask_request.args.getlist("tag")
+    if tags:
+        query = query.join(Compose.tags, aliased=True)
+        for tag in tags:
+            query = query.filter(Tag.name == tag)
 
     query = _order_by(flask_request, query, Compose,
                       ["id"], "-id")
