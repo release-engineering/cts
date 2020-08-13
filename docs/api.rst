@@ -14,6 +14,8 @@ The CTS Compose is always represented in the API requests as JSON, for example:
     {
         "builder": "odcs",
         "tags": ["periodic"],
+        "parents": ["Fedora-Base-20200517.n.1"]
+        "children": [],
         "compose_info": {
             "header": {
                 "type": "productmd.composeinfo",
@@ -61,6 +63,16 @@ The fields used in the CTS compose JSON have following meaning:
 
 *compose_info* - ``(productmd.ComposeInfo)``
     Compose metadata in https://productmd.readthedocs.io/en/latest/composeinfo-1.1.html format.
+
+.. _compose_parents:
+
+*parents* - ``(list of strings)``
+    Compose IDs of parent composes. The parent composes can be set using the ``parent_compose_ids`` argument when creating the compose.
+
+.. _compose_children:
+
+*children* - ``(list of strings)``
+    Compose IDs of child composes.
 
 
 CTS Compose Tag JSON representation

@@ -103,6 +103,14 @@ class User(CTSBase, UserMixin):
         return user
 
 
+composes_to_composes = db.Table(
+    "composes_to_composes",
+    db.Column("parent_compose_id", db.String, db.ForeignKey("composes.id"), nullable=False),
+    db.Column("child_compose_id", db.Integer, db.ForeignKey("composes.id"), nullable=False),
+    db.UniqueConstraint("parent_compose_id", "child_compose_id", name="unique_composes"),
+)
+
+
 tags_to_composes = db.Table(
     "tags_to_composes",
     db.Column("compose_id", db.String, db.ForeignKey("composes.id"), nullable=False),
@@ -377,9 +385,17 @@ class Compose(CTSBase):
     builder = db.Column(db.String)
     # Compose tags.
     tags = db.relationship("Tag", secondary=tags_to_composes)
+    # Add "parents" and "children" relationships between composes.
+    parents = db.relationship(
+        "Compose",
+        secondary=composes_to_composes,
+        primaryjoin=id == composes_to_composes.c.child_compose_id,
+        secondaryjoin=id == composes_to_composes.c.parent_compose_id,
+        backref="children",
+    )
 
     @classmethod
-    def create(cls, session, builder, ci, user_data=None):
+    def create(cls, session, builder, ci, user_data=None, parent_compose_ids=None):
         """
         Creates new Compose and commits it to database ensuring that its ID is unique.
 
@@ -390,6 +406,16 @@ class Compose(CTSBase):
         :return tuple: (Compose, productmd.ComposeInfo) - tuple with newly created
             Compose and changed ComposeInfo metadata.
         """
+
+        # Find parent Compose instances before creating the Compose to be sure
+        # the parent_compose_ids are correct.
+        parent_composes = []
+        for parent_compose_id in parent_compose_ids or []:
+            parent_compose = Compose.query.filter(Compose.id == parent_compose_id).first()
+            if not parent_compose:
+                raise ValueError("Cannot find parent compose with id %s." % parent_compose_id)
+            parent_composes.append(parent_compose)
+
         while True:
             kwargs = {
                 "id": ci.create_compose_id(),
@@ -431,6 +457,11 @@ class Compose(CTSBase):
             ci.compose.respin += 1
             ci.compose.id = ci.create_compose_id()
 
+        # Add parent composes.
+        for parent_compose in parent_composes:
+            compose.parents.append(parent_compose)
+        session.commit()
+
         ComposeChange.create(session, compose, builder, action="created", user_data=user_data)
         return compose, ci
 
@@ -455,6 +486,8 @@ class Compose(CTSBase):
             "compose_info": json.loads(ci.dumps()),
             "builder": self.builder,
             "tags": [tag.name for tag in self.tags],
+            "parents": [c.id for c in self.parents],
+            "children": [c.id for c in self.children],
         }
 
     def tag(self, logged_user, tag_name, user_data=None):

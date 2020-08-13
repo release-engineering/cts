@@ -47,6 +47,8 @@ class TestComposeModel(ModelsBaseTest):
         expected_json = {
             "builder": "odcs",
             "tags": [],
+            "parents": [],
+            "children": [],
             "compose_info": {
                 "header": {
                     "type": "productmd.composeinfo",
@@ -94,6 +96,20 @@ class TestComposeModel(ModelsBaseTest):
 
         self.assertEqual(compose.respin, 2)
         self.assertEqual(ci.compose.respin, 2)
+
+    def test_create_parent_compose_ids(self):
+        # Create for first time
+        User.create_user(username="odcs")
+        parent1 = Compose.create(db.session, "odcs", self.ci)[0]
+        parent2 = Compose.create(db.session, "odcs", self.ci)[0]
+        child = Compose.create(
+            db.session, "odcs", self.ci, parent_compose_ids=[parent1.id, parent2.id]
+        )[0]
+        db.session.expire_all()
+
+        self.assertEqual(child.parents, [parent1, parent2])
+        self.assertEqual(parent1.children, [child])
+        self.assertEqual(parent2.children, [child])
 
 
 class TestTagModel(ModelsBaseTest):
