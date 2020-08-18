@@ -17,7 +17,7 @@ import sqlalchemy as sa
 def upgrade():
     op.create_table('composes_to_composes',
     sa.Column('parent_compose_id', sa.String(), nullable=False),
-    sa.Column('child_compose_id', sa.Integer(), nullable=False),
+    sa.Column('child_compose_id', sa.String(), nullable=False),
     sa.ForeignKeyConstraint(['child_compose_id'], ['composes.id'], ),
     sa.ForeignKeyConstraint(['parent_compose_id'], ['composes.id'], ),
     sa.UniqueConstraint('parent_compose_id', 'child_compose_id', name='unique_composes')

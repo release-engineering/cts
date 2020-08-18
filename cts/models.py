@@ -106,7 +106,7 @@ class User(CTSBase, UserMixin):
 composes_to_composes = db.Table(
     "composes_to_composes",
     db.Column("parent_compose_id", db.String, db.ForeignKey("composes.id"), nullable=False),
-    db.Column("child_compose_id", db.Integer, db.ForeignKey("composes.id"), nullable=False),
+    db.Column("child_compose_id", db.String, db.ForeignKey("composes.id"), nullable=False),
     db.UniqueConstraint("parent_compose_id", "child_compose_id", name="unique_composes"),
 )
 
