@@ -9,7 +9,7 @@ ARG cacert_url=undefined
 WORKDIR /src
 RUN cd /etc/yum.repos.d/ \
     && dnf -v -y install 'dnf-command(config-manager)' \
-    && dnf config-manager --add-repo http://download-node-02.eng.bos.redhat.com/rel-eng/RCMTOOLS/latest-RCMTOOLS-2-F-31/compose/Everything/x86_64/os/ \
+    && dnf config-manager --add-repo http://download-node-02.eng.bos.redhat.com/rel-eng/RCMTOOLS/latest-RCMTOOLS-2-F-32/compose/Everything/x86_64/os/ \
     && dnf -v --nogpg -y install httpd python3-mod_wsgi mod_auth_gssapi python3-rhmsg mod_ssl mod_ldap \
         systemd \
         python3-pip \
