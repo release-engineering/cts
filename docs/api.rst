@@ -16,6 +16,8 @@ The CTS Compose is always represented in the API requests as JSON, for example:
         "tags": ["periodic"],
         "parents": ["Fedora-Base-20200517.n.1"]
         "children": [],
+        "respin_of": None,
+        "respun_by": [],
         "compose_info": {
             "header": {
                 "type": "productmd.composeinfo",
@@ -73,6 +75,16 @@ The fields used in the CTS compose JSON have following meaning:
 
 *children* - ``(list of strings)``
     Compose IDs of child composes.
+
+.. _compose_respin_of:
+
+*respin_of* - ``(string)``
+    Compose IDs of compose this compose respins. Can be set using the ``respin_of`` argument when creating the compose.
+
+.. _compose_respun_by:
+
+*respun_by* - ``(list of strings)``
+    Compose IDs of composes respinning this compose.
 
 
 CTS Compose Tag JSON representation

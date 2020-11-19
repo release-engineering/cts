@@ -49,6 +49,8 @@ class TestComposeModel(ModelsBaseTest):
             "tags": [],
             "parents": [],
             "children": [],
+            "respin_of": None,
+            "respun_by": [],
             "compose_info": {
                 "header": {
                     "type": "productmd.composeinfo",
@@ -110,6 +112,26 @@ class TestComposeModel(ModelsBaseTest):
         self.assertEqual(child.parents, [parent1, parent2])
         self.assertEqual(parent1.children, [child])
         self.assertEqual(parent2.children, [child])
+
+    def test_create_respin_of(self):
+        # Create for first time
+        User.create_user(username="odcs")
+        original = Compose.create(db.session, "odcs", self.ci)[0]
+        db.session.expire_all()
+
+        # Create for second time and check that respin incremented.
+        respin1, ci = Compose.create(db.session, "odcs", self.ci, respin_of=original.id)
+        respin2, ci = Compose.create(db.session, "odcs", self.ci, respin_of=original.id)
+        db.session.expire_all()
+
+        composes = db.session.query(Compose).all()
+        self.assertEqual(respin1.respin_of, original)
+        self.assertEqual(respin2.respin_of, original)
+        self.assertEqual(original.respun_by, [respin1, respin2])
+        self.assertEqual(respin1.json()["respin_of"], original.id)
+        self.assertEqual(respin1.json()["respun_by"], [])
+        self.assertEqual(original.json()["respin_of"], None)
+        self.assertEqual(original.json()["respun_by"], [respin1.id, respin2.id])
 
 
 class TestTagModel(ModelsBaseTest):

@@ -35,6 +35,7 @@ from cts.events import cache_composes_if_state_changed
 from cts.events import start_to_publish_messages
 
 from sqlalchemy import event
+from sqlalchemy.orm import backref
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import FlushError
 from flask_sqlalchemy import SignallingSession
@@ -394,8 +395,19 @@ class Compose(CTSBase):
         backref="children",
     )
 
+    respin_of_id = db.Column(db.String, db.ForeignKey('composes.id'))
+    # Add "respin_of" and "respun_by" relationships between composes.
+    respin_of = db.relationship(
+        "Compose",
+        remote_side=[id],
+        backref=backref('respun_by'),
+        uselist=False,
+        foreign_keys=[respin_of_id]
+    )
+
     @classmethod
-    def create(cls, session, builder, ci, user_data=None, parent_compose_ids=None):
+    def create(cls, session, builder, ci, user_data=None, parent_compose_ids=None,
+               respin_of=None):
         """
         Creates new Compose and commits it to database ensuring that its ID is unique.
 
@@ -403,6 +415,8 @@ class Compose(CTSBase):
         :param str builder: Name of the user (service) building this compose.
         :param productmd.ComposeInfo ci: ComposeInfo metadata.
         :param str user_data: Optional user data to add to ComposeChange record.
+        :param list parent_compose_ids: List of parent compose IDs.
+        :param str respin_of: Compose ID of compose this compose respins.
         :return tuple: (Compose, productmd.ComposeInfo) - tuple with newly created
             Compose and changed ComposeInfo metadata.
         """
@@ -415,6 +429,13 @@ class Compose(CTSBase):
             if not parent_compose:
                 raise ValueError("Cannot find parent compose with id %s." % parent_compose_id)
             parent_composes.append(parent_compose)
+
+        # Find respin_of Compose instance before creating the Compose to be sure
+        # the respin_of is correct.
+        if respin_of:
+            respin_of_compose = Compose.query.filter(Compose.id == respin_of).first()
+            if not respin_of_compose:
+                raise ValueError("Cannot find respin_of compose with id %s." % respin_of)
 
         while True:
             kwargs = {
@@ -460,6 +481,9 @@ class Compose(CTSBase):
         # Add parent composes.
         for parent_compose in parent_composes:
             compose.parents.append(parent_compose)
+        # Add respin_of compose:
+        if respin_of:
+            compose.respin_of = respin_of_compose
         session.commit()
 
         ComposeChange.create(session, compose, builder, action="created", user_data=user_data)
@@ -488,6 +512,8 @@ class Compose(CTSBase):
             "tags": [tag.name for tag in self.tags],
             "parents": [c.id for c in self.parents],
             "children": [c.id for c in self.children],
+            "respin_of": self.respin_of.id if self.respin_of else None,
+            "respun_by": [c.id for c in self.respun_by],
         }
 
     def tag(self, logged_user, tag_name, user_data=None):

@@ -158,6 +158,8 @@ class CTSAPI(MethodView):
         :jsonparam ComposeInfo compose_info: Compose metadata in productmd.ComposeInfo format.
         :jsonparam list parent_compose_ids: Compose IDs of parent composes associated with
             this compose.
+        :jsonparam string respin_of: Compose ID of the original compose which this compose
+            respins.
 
         :statuscode 200: Compose request created and updated ComposeInfo returned.
         :statuscode 400: Request not in valid format.
@@ -178,9 +180,11 @@ class CTSAPI(MethodView):
             raise ValueError('Cannot parse "compose_info": %s' % repr(e))
 
         parent_compose_ids = data.get("parent_compose_ids", None)
+        respin_of = data.get("respin_of", None)
 
         ci = Compose.create(
-            db.session, g.user.username, ci, parent_compose_ids=parent_compose_ids
+            db.session, g.user.username, ci, parent_compose_ids=parent_compose_ids,
+            respin_of=respin_of
         )[1]
         return jsonify(json.loads(ci.dumps())), 200
 

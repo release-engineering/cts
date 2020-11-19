@@ -274,6 +274,38 @@ class TestViews(ViewBaseTest):
         c = db.session.query(Compose).filter(Compose.id == "Fedora-Rawhide-20200517.n.3").first()
         self.assertEqual(c, None)
 
+    def test_composes_post_respin_of(self):
+        with self.test_request_context(user='odcs'):
+            rv = self.client.post(
+                '/api/1/composes/',
+                json={"compose_info": json.loads(self.ci.dumps()),
+                      "respin_of": self.c1.id}
+            )
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(data["payload"]["compose"]["id"], "Fedora-Rawhide-20200517.n.3")
+
+        db.session.expire_all()
+        c = db.session.query(Compose).filter(Compose.id == "Fedora-Rawhide-20200517.n.3").one()
+        c1 = db.session.query(Compose).filter(Compose.id == "Fedora-Rawhide-20200517.n.1").one()
+        self.assertEqual(c.respin_of, c1)
+        self.assertEqual(c1.respun_by, [c])
+
+    def test_composes_post_wrong_respin_of(self):
+        with self.test_request_context(user='odcs'):
+            rv = self.client.post(
+                '/api/1/composes/',
+                json={"compose_info": json.loads(self.ci.dumps()),
+                      "respin_of": "non-existing"}
+            )
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(data["message"], "Cannot find respin_of compose with id non-existing.")
+
+        db.session.expire_all()
+        c = db.session.query(Compose).filter(Compose.id == "Fedora-Rawhide-20200517.n.3").first()
+        self.assertEqual(c, None)
+
     def test_tags_get(self):
         self.test_tags_post()
         rv = self.client.get('/api/1/tags/')
