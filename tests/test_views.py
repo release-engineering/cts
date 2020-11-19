@@ -172,6 +172,27 @@ class TestViews(ViewBaseTest):
 
         self.assertEqual(len(data["items"]), 1)
 
+    def test_composes_get_order_by(self):
+        self.ci.compose.date = "20200518"
+        self.ci.compose.respin = 0
+        Compose.create(db.session, "odcs", self.ci)
+        self.ci.compose.date = "20200519"
+        self.ci.release.short = "Z"
+        self.ci.compose.respin = 0
+        Compose.create(db.session, "odcs", self.ci)
+        with self.test_request_context(user='odcs'):
+            rv = self.client.get('/api/1/composes/')
+            data = json.loads(rv.get_data(as_text=True))
+
+        compose_ids = [c["compose_info"]["payload"]["compose"]["id"] for c in data["items"]]
+        expected_compose_ids = [
+            "Z-Rawhide-20200519.n.0",
+            "Fedora-Rawhide-20200518.n.0",
+            "Fedora-Rawhide-20200517.n.2",
+            "Fedora-Rawhide-20200517.n.1",
+        ]
+        self.assertEqual(expected_compose_ids, compose_ids)
+
     def test_composes_post(self):
         with self.test_request_context(user='odcs'):
             rv = self.client.post(

@@ -127,8 +127,8 @@ class CTSAPI(MethodView):
         :query string base_product_type: Return only composes with this ComposeInfo base_product type value.
         :query string builder: Return only composes imported by this builder username.
         :query list tag: Return only composes tagged by one of these tags.
-        :query string order_by: Order the composes by the given field. If ``-`` prefix is used,
-            the order will be descending. The default value is ``-id``.
+        :query string/list order_by: Order the composes by the given fields. If ``-`` prefix is used,
+            the order will be descending. The default value is ``["-date", "-id"]``.
         :statuscode 200: Composes are returned.
         :statuscode 404: Compose not found.
         """
@@ -292,8 +292,8 @@ class TagAPI(MethodView):
         returned. If ``id`` is string, it is treated as tag name.
 
         :query string id: Return only tag with this :ref:`id<tag_id>` or :ref:`name<tag_name>`.
-        :query string order_by: Order the tags by the given field. If ``-`` prefix is used,
-            the order will be descending. The default value is ``-id``.
+        :query string/list order_by: Order the tags by the given fields. If ``-`` prefix is used,
+            the order will be descending. The default value is ``["-id"]``.
         :statuscode 200: Tags are returned.
         :statuscode 404: Tag not found.
         """
