@@ -163,6 +163,15 @@ class TestViews(ViewBaseTest):
 
         self.assertEqual(len(data["items"]), 1)
 
+    def test_composes_get_untagged(self):
+        self.ci.compose.date = "20200518"
+        Compose.create(db.session, "odcs", self.ci)
+        with self.test_request_context(user='odcs'):
+            rv = self.client.get('/api/1/composes/?tag=&date=20200518')
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(len(data["items"]), 1)
+
     def test_composes_post(self):
         with self.test_request_context(user='odcs'):
             rv = self.client.post(

@@ -126,9 +126,13 @@ def filter_composes(flask_request):
 
     tags = flask_request.args.getlist("tag")
     if tags:
-        query = query.join(Compose.tags, aliased=True)
-        for tag in tags:
-            query = query.filter(Tag.name == tag)
+        if "" in tags:
+            # Get just composes without any Compose.tags.
+            query = query.filter(~Compose.tags.any())
+        else:
+            query = query.join(Compose.tags, aliased=True)
+            for tag in tags:
+                query = query.filter(Tag.name == tag)
 
     query = _order_by(flask_request, query, Compose,
                       ["id"], "-id")
