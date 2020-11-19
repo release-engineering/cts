@@ -126,7 +126,9 @@ class CTSAPI(MethodView):
         :query string base_product_version: Return only composes with this ComposeInfo base_product version value.
         :query string base_product_type: Return only composes with this ComposeInfo base_product type value.
         :query string builder: Return only composes imported by this builder username.
-        :query list tag: Return only composes tagged by one of these tags.
+        :query list tag: Return only composes tagged by one of these tags. Use empty value (``?tag=``)
+                         to get composes with no tag, or prefix the tag name with ``-`` to get composes
+                         not tagged with this tag.
         :query string/list order_by: Order the composes by the given fields. If ``-`` prefix is used,
             the order will be descending. The default value is ``["-date", "-id"]``.
         :statuscode 200: Composes are returned.

@@ -137,9 +137,12 @@ def filter_composes(flask_request):
             # Get just composes without any Compose.tags.
             query = query.filter(~Compose.tags.any())
         else:
-            query = query.join(Compose.tags, aliased=True)
+            query = query.outerjoin(Compose.tags, aliased=True)
             for tag in tags:
-                query = query.filter(Tag.name == tag)
+                if tag.startswith("-"):
+                    query = query.filter(~Compose.tags.any(Tag.name == tag[1:]))
+                else:
+                    query = query.filter(Tag.name == tag)
 
     query = _order_by(flask_request, query, Compose,
                       allowed_keys, ["-date", "-id"])

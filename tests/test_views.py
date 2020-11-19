@@ -499,6 +499,49 @@ class TestViews(ViewBaseTest):
         self.assertTrue("Unknown action." in data["message"])
 
 
+class TestViewsQueryByTag(ViewBaseTest):
+    def setup_test_data(self):
+        # Create a user
+        User.create_user(username="odcs")
+        # Create two tags
+        Tag.create(db.session, "odcs", name="test", description="test", documentation="test")
+        Tag.create(db.session, "odcs", name="removed", description="test", documentation="test")
+        # Create composes with all combinations of tags
+        self.ci.compose.respin = 0
+        c, _ = Compose.create(db.session, "odcs", self.ci)
+        self.ci.compose.respin = 1
+        c, _ = Compose.create(db.session, "odcs", self.ci)
+        c.tag("odcs", "test")
+        c.tag("odcs", "removed")
+        self.ci.compose.respin = 2
+        c, _ = Compose.create(db.session, "odcs", self.ci)
+        c.tag("odcs", "test")
+        self.ci.compose.respin = 3
+        c, _ = Compose.create(db.session, "odcs", self.ci)
+        c.tag("odcs", "removed")
+
+    def test_composes_get_without_tag(self):
+        with self.test_request_context(user='odcs'):
+            rv = self.client.get('/api/1/composes/?tag=-removed')
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(len(data["items"]), 2)
+        self.assertEqual(
+            [c["compose_info"]["payload"]["compose"]["respin"] for c in data["items"]],
+            [2, 0],
+        )
+
+    def test_composes_get_with_and_without_tag(self):
+        with self.test_request_context(user='odcs'):
+            rv = self.client.get('/api/1/composes/?tag=test&tag=-removed')
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(len(data["items"]), 1)
+        self.assertEqual(
+            data["items"][0]["compose_info"]["payload"]["compose"]["respin"], 2
+        )
+
+
 class TestViewsComposeTagging(ViewBaseTest):
     maxDiff = None
 
