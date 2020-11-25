@@ -111,6 +111,8 @@ class CTSAPI(MethodView):
 
         :query string id: Return only compose with this ID.
         :query string date: Return only composes with this ComposeInfo date value.
+        :query string date_before: Return only composes with date before given date
+        :query string date_before: Return only composes with date after given date
         :query string respin: Return only composes with this ComposeInfo respin value.
         :query string type: Return only composes with this ComposeInfo type value.
         :query string label: Return only composes with this ComposeInfo label value.

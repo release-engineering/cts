@@ -542,6 +542,69 @@ class TestViewsQueryByTag(ViewBaseTest):
         )
 
 
+class TestViewsQueryBeforeAfterDate(ViewBaseTest):
+    def setup_test_data(self):
+        # Create a user
+        User.create_user(username="odcs")
+        # Create composes with two different dates
+        for date in ["20201110", "20201120"]:
+            self.ci.compose.date = date
+            Compose.create(db.session, "odcs", self.ci)
+
+    def query_with_filter(self, query):
+        with self.test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/composes/?" + query)
+            return [
+                c["compose_info"]["payload"]["compose"]["date"]
+                for c in rv.get_json()["items"]
+            ]
+
+    def test_before_query_before_first(self):
+        self.assertEqual(self.query_with_filter("date_before=20201101"), [])
+
+    def test_before_query_on_first(self):
+        self.assertEqual(self.query_with_filter("date_before=20201110"), [])
+
+    def test_before_query_before_second(self):
+        self.assertEqual(self.query_with_filter("date_before=20201115"), ["20201110"])
+
+    def test_before_query_on_second(self):
+        self.assertEqual(self.query_with_filter("date_before=20201120"), ["20201110"])
+
+    def test_before_query_after_second(self):
+        self.assertEqual(
+            self.query_with_filter("date_before=20201130"), ["20201120", "20201110"]
+        )
+
+    def test_after_query_before_first(self):
+        self.assertEqual(
+            self.query_with_filter("date_after=20201101"), ["20201120", "20201110"]
+        )
+
+    def test_after_query_on_first(self):
+        self.assertEqual(self.query_with_filter("date_after=20201110"), ["20201120"])
+
+    def test_after_query_before_second(self):
+        self.assertEqual(self.query_with_filter("date_after=20201115"), ["20201120"])
+
+    def test_after_query_on_second(self):
+        self.assertEqual(self.query_with_filter("date_after=20201120"), [])
+
+    def test_after_query_after_second(self):
+        self.assertEqual(self.query_with_filter("date_after=20201130"), [])
+
+    def test_before_second_after_first(self):
+        self.assertEqual(
+            self.query_with_filter("date_before=20201119&date_after=20201111"), []
+        )
+
+    def test_before_first_after_second(self):
+        self.assertEqual(
+            self.query_with_filter("date_before=20201121&date_after=20201109"),
+            ["20201120", "20201110"],
+        )
+
+
 class TestViewsComposeTagging(ViewBaseTest):
     maxDiff = None
 

@@ -131,6 +131,13 @@ def filter_composes(flask_request):
     if search_query:
         query = query.filter_by(**search_query)
 
+    date_before = flask_request.args.get("date_before")
+    if date_before:
+        query = query.filter(Compose.date < date_before)
+    date_after = flask_request.args.get("date_after")
+    if date_after:
+        query = query.filter(Compose.date > date_after)
+
     tags = flask_request.args.getlist("tag")
     if tags:
         if "" in tags:
