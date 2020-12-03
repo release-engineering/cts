@@ -26,7 +26,7 @@ from logging import getLogger
 from flask import Flask, jsonify
 from flask_login import LoginManager
 from flask_sqlalchemy import SQLAlchemy
-from werkzeug.exceptions import BadRequest, Unauthorized
+from werkzeug.exceptions import BadRequest, Unauthorized, NotFound as WerkzeugNotFound
 
 from cts.logger import init_logging
 from cts.config import init_config
@@ -69,9 +69,14 @@ def json_error(status, error, message):
 
 
 @app.errorhandler(NotFound)
+@app.errorhandler(WerkzeugNotFound)
 def notfound_error(e):
     """Flask error handler for NotFound exceptions"""
-    return json_error(404, 'Not Found', e.args[0])
+    try:
+        msg = e.args[0]
+    except IndexError:
+        msg = "The requested URL was not found on the server."
+    return json_error(404, 'Not Found', msg)
 
 
 @app.errorhandler(Unauthorized)
