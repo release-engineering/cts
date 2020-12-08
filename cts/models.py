@@ -495,6 +495,7 @@ class Compose(CTSBase):
         ci.compose.type = self.type
         ci.compose.date = self.date
         ci.compose.respin = self.respin
+        ci.compose.label = self.label
         ci.release.name = self.release_name
         ci.release.short = self.release_short
         ci.release.version = self.release_version
