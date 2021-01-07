@@ -43,6 +43,8 @@ RUN if [ "$cacert_url" != "undefined" ]; then \
         && update-ca-trust extract; \
     fi
 
+RUN chmod 755 /var/log/httpd
+
 COPY . .
 
 RUN mkdir -p /usr/share/cts && cp contrib/cts.wsgi /usr/share/cts/
