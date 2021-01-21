@@ -16,6 +16,7 @@ It provides a REST API to manipulate these metadata and sends UMB messages on ev
 
    about
    api
+   dev
 
 Indices and tables
 ==================
