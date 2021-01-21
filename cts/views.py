@@ -109,6 +109,15 @@ class CTSAPI(MethodView):
         If ``id`` is set, only the compose defined by that ID is
         returned.
 
+        It is possible to query for substrings by using following suffixes
+        for each query parameter of string type:
+
+        - `*_contains` - The value of this field contains the substring.
+        - `*_startswith` - The value of this field starts with this substring.
+        - `*_endswith` - The value of this field ends with this substring.
+
+        For example, to return only Alpha composes: `label_startswith=Alpha`.
+
         :query string id: Return only compose with this ID.
         :query string date: Return only composes with this ComposeInfo date value.
         :query string date_before: Return only composes with date before given date

@@ -122,14 +122,26 @@ def filter_composes(flask_request):
         "release_internal", "base_product_name", "base_product_short",
         "base_product_version", "base_product_type", "builder"
     ]
+    allowed_suffixes = [
+        "", "_contains", "_startswith", "_endswith"
+    ]
     for key in allowed_keys:
-        if flask_request.args.get(key, None):
-            search_query[key] = flask_request.args[key]
+        for suffix in allowed_suffixes:
+            if flask_request.args.get(key + suffix, None):
+                search_query[key] = (flask_request.args[key + suffix], suffix)
 
     query = Compose.query
-
-    if search_query:
-        query = query.filter_by(**search_query)
+    for key, data in search_query.items():
+        value, suffix = data
+        column = getattr(Compose, key)
+        if suffix == "_contains":
+            query = query.filter(column.contains(value))
+        elif suffix == "_startswith":
+            query = query.filter(column.startswith(value))
+        elif suffix == "_endswith":
+            query = query.filter(column.endswith(value))
+        else:
+            query = query.filter(column == value)
 
     date_before = flask_request.args.get("date_before")
     if date_before:

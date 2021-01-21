@@ -163,6 +163,33 @@ class TestViews(ViewBaseTest):
 
         self.assertEqual(len(data["items"]), 1)
 
+    def test_composes_get_startswith(self):
+        self.ci.compose.date = "20200518"
+        Compose.create(db.session, "odcs", self.ci)
+        with self.test_request_context(user='odcs'):
+            rv = self.client.get('/api/1/composes/?id_startswith=Fedora-Rawhide-20200517.n.')
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(len(data["items"]), 2)
+
+    def test_composes_get_endswith(self):
+        self.ci.compose.date = "20200518"
+        Compose.create(db.session, "odcs", self.ci)
+        with self.test_request_context(user='odcs'):
+            rv = self.client.get('/api/1/composes/?date_endswith=0517')
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(len(data["items"]), 2)
+
+    def test_composes_get_contains(self):
+        self.ci.compose.date = "20200518"
+        Compose.create(db.session, "odcs", self.ci)
+        with self.test_request_context(user='odcs'):
+            rv = self.client.get('/api/1/composes/?id_contains=20200517.n.')
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(len(data["items"]), 2)
+
     def test_composes_get_untagged(self):
         self.ci.compose.date = "20200518"
         Compose.create(db.session, "odcs", self.ci)
