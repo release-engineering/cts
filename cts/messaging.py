@@ -28,7 +28,7 @@ from cts import conf
 
 log = getLogger(__name__)
 
-__all__ = ('publish',)
+__all__ = ("publish",)
 
 
 def publish(msgs):
@@ -45,14 +45,14 @@ def _umb_send_msg(msgs):
     from rhmsg.activemq.producer import AMQProducer
 
     config = {
-        'urls': conf.messaging_broker_urls,
-        'certificate': conf.messaging_cert_file,
-        'private_key': conf.messaging_key_file,
-        'trusted_certificates': conf.messaging_ca_cert,
+        "urls": conf.messaging_broker_urls,
+        "certificate": conf.messaging_cert_file,
+        "private_key": conf.messaging_key_file,
+        "trusted_certificates": conf.messaging_ca_cert,
     }
     with AMQProducer(**config) as producer:
         for msg in msgs:
-            event = msg.get('event', 'event')
+            event = msg.get("event", "event")
             topic = "%s%s" % (conf.messaging_topic_prefix, event)
             producer.through_topic(topic)
             outgoing_msg = proton.Message()
@@ -63,21 +63,21 @@ def _umb_send_msg(msgs):
 def _fedora_messaging_send_msg(msgs):
     """Send message to fedora-messaging."""
     from fedora_messaging import api, config
+
     config.conf.setup_logging()
 
     for msg in msgs:
-        event = msg.get('event', 'event')
+        event = msg.get("event", "event")
         topic = "%s%s" % (conf.messaging_topic_prefix, event)
         api.publish(api.Message(topic=topic, body=msg))
 
 
 def _get_messaging_backend():
-    if conf.messaging_backend == 'rhmsg':
+    if conf.messaging_backend == "rhmsg":
         return _umb_send_msg
-    elif conf.messaging_backend == 'fedora-messaging':
+    elif conf.messaging_backend == "fedora-messaging":
         return _fedora_messaging_send_msg
     elif conf.messaging_backend:
-        raise ValueError(
-            'Unknown messaging backend {0}'.format(conf.messaging_backend))
+        raise ValueError("Unknown messaging backend {0}".format(conf.messaging_backend))
     else:
         return None

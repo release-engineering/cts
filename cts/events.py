@@ -38,36 +38,38 @@ def cache_composes_if_state_changed(session, flush_context):
 
     from cts.models import Compose
 
-    composes = (item for item in (session.new | session.dirty)
-                if isinstance(item, Compose))
+    composes = (
+        item for item in (session.new | session.dirty) if isinstance(item, Compose)
+    )
 
     with _cache_lock:
         for comp in composes:
             extra_args = {}
-            if not attributes.get_history(comp, 'id').unchanged:
+            if not attributes.get_history(comp, "id").unchanged:
                 event = "compose-created"
-            elif attributes.get_history(comp, 'tags').added:
+            elif attributes.get_history(comp, "tags").added:
                 event = "compose-tagged"
                 # We change only single tag in the same time.
-                extra_args["tag"] = attributes.get_history(comp, 'tags').added[0].name
-            elif attributes.get_history(comp, 'tags').deleted:
+                extra_args["tag"] = attributes.get_history(comp, "tags").added[0].name
+            elif attributes.get_history(comp, "tags").deleted:
                 event = "compose-untagged"
                 # We change only single tag in the same time.
-                extra_args["tag"] = attributes.get_history(comp, 'tags').deleted[0].name
+                extra_args["tag"] = attributes.get_history(comp, "tags").deleted[0].name
             else:
                 event = "compose-changed"
 
             if comp.id not in _cached_composes:
                 _cached_composes[comp.id] = []
             msg = {
-                'event': event,
-                'compose': comp.json(),
+                "event": event,
+                "compose": comp.json(),
             }
             msg.update(extra_args)
             _cached_composes[comp.id].append(msg)
 
-    log.debug('Cached composes to be sent due to state changed: %s',
-              _cached_composes.keys())
+    log.debug(
+        "Cached composes to be sent due to state changed: %s", _cached_composes.keys()
+    )
 
 
 def start_to_publish_messages(session):
@@ -78,7 +80,7 @@ def start_to_publish_messages(session):
         msgs = []
         for compose_msgs in _cached_composes.values():
             msgs += compose_msgs
-        log.debug('Sending messages: %s', msgs)
+        log.debug("Sending messages: %s", msgs)
         if msgs:
             try:
                 messaging.publish(msgs)

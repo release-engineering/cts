@@ -37,74 +37,64 @@ from cts.metrics import registry
 
 
 api_v1 = {
-    'composes': {
-        'url': '/api/1/composes/',
-        'options': {
-            'defaults': {'id': None},
-            'methods': ['GET'],
-        }
+    "composes": {
+        "url": "/api/1/composes/",
+        "options": {
+            "defaults": {"id": None},
+            "methods": ["GET"],
+        },
     },
-    'compose': {
-        'url': '/api/1/composes/<id>',
-        'options': {
-            'methods': ['GET'],
-        }
+    "compose": {
+        "url": "/api/1/composes/<id>",
+        "options": {
+            "methods": ["GET"],
+        },
     },
-    'compose_edit': {
-        'url': '/api/1/composes/<id>',
-        'options': {
-            'methods': ['PATCH'],
-        }
+    "compose_edit": {
+        "url": "/api/1/composes/<id>",
+        "options": {
+            "methods": ["PATCH"],
+        },
     },
-    'composes_post': {
-        'url': '/api/1/composes/',
-        'options': {
-            'methods': ['POST'],
-        }
+    "composes_post": {
+        "url": "/api/1/composes/",
+        "options": {
+            "methods": ["POST"],
+        },
     },
-    'tags': {
-        'url': '/api/1/tags/',
-        'options': {
-            'defaults': {'id': None},
-            'methods': ['GET'],
-        }
+    "tags": {
+        "url": "/api/1/tags/",
+        "options": {
+            "defaults": {"id": None},
+            "methods": ["GET"],
+        },
     },
-    'tag': {
-        'url': '/api/1/tags/<id>',
-        'options': {
-            'methods': ['GET'],
-        }
+    "tag": {
+        "url": "/api/1/tags/<id>",
+        "options": {
+            "methods": ["GET"],
+        },
     },
-    'tag_edit': {
-        'url': '/api/1/tags/<int:id>',
-        'options': {
-            'methods': ['PATCH'],
-        }
+    "tag_edit": {
+        "url": "/api/1/tags/<int:id>",
+        "options": {
+            "methods": ["PATCH"],
+        },
     },
-    'tags_post': {
-        'url': '/api/1/tags/',
-        'options': {
-            'methods': ['POST'],
-        }
+    "tags_post": {
+        "url": "/api/1/tags/",
+        "options": {
+            "methods": ["POST"],
+        },
     },
-    'about': {
-        'url': '/api/1/about/',
-        'options': {
-            'methods': ['GET']
-        }
-    },
-    'metrics': {
-        'url': '/api/1/metrics/',
-        'options': {
-            'methods': ['GET']
-        }
-    },
+    "about": {"url": "/api/1/about/", "options": {"methods": ["GET"]}},
+    "metrics": {"url": "/api/1/metrics/", "options": {"methods": ["GET"]}},
 }
 
 
 class CTSAPI(MethodView):
     def get(self, id):
-        """ Returns CTS composes.
+        """Returns CTS composes.
 
         If ``id`` is set, only the compose defined by that ID is
         returned.
@@ -149,8 +139,8 @@ class CTSAPI(MethodView):
             p_query = filter_composes(request)
 
             json_data = {
-                'meta': pagination_metadata(p_query, request.args),
-                'items': [item.json() for item in p_query.items]
+                "meta": pagination_metadata(p_query, request.args),
+                "items": [item.json() for item in p_query.items],
             }
 
             return jsonify(json_data), 200
@@ -160,13 +150,13 @@ class CTSAPI(MethodView):
             if compose:
                 return jsonify(compose.json(True)), 200
             else:
-                raise NotFound('No such compose found.')
+                raise NotFound("No such compose found.")
 
     @login_required
-    @require_scopes('new-compose')
-    @requires_role('allowed_builders')
+    @require_scopes("new-compose")
+    @requires_role("allowed_builders")
     def post(self):
-        """ Adds new compose to CTS database.
+        """Adds new compose to CTS database.
 
         :jsonparam ComposeInfo compose_info: Compose metadata in productmd.ComposeInfo format.
         :jsonparam list parent_compose_ids: Compose IDs of parent composes associated with
@@ -180,7 +170,7 @@ class CTSAPI(MethodView):
         """
         data = request.get_json(force=True)
         if not data:
-            raise ValueError('No JSON POST data submitted')
+            raise ValueError("No JSON POST data submitted")
 
         ci_json = data.get("compose_info", None)
         if ci_json is None:
@@ -196,15 +186,18 @@ class CTSAPI(MethodView):
         respin_of = data.get("respin_of", None)
 
         ci = Compose.create(
-            db.session, g.user.username, ci, parent_compose_ids=parent_compose_ids,
-            respin_of=respin_of
+            db.session,
+            g.user.username,
+            ci,
+            parent_compose_ids=parent_compose_ids,
+            respin_of=respin_of,
         )[1]
         return jsonify(json.loads(ci.dumps())), 200
 
     @login_required
-    @require_scopes('edit-compose')
+    @require_scopes("edit-compose")
     def patch(self, id):
-        """ Change the compose metadata.
+        """Change the compose metadata.
 
         :jsonparam str action: One of:
 
@@ -221,11 +214,11 @@ class CTSAPI(MethodView):
         """
         compose = Compose.query.filter_by(id=id).first()
         if not compose:
-            raise NotFound('No such compose found.')
+            raise NotFound("No such compose found.")
 
         data = request.get_json(force=True)
         if not data:
-            raise ValueError('No JSON PATCH data submitted.')
+            raise ValueError("No JSON PATCH data submitted.")
 
         action = data.get("action", None)
         if action is None:
@@ -265,7 +258,7 @@ class CTSAPI(MethodView):
 
 class AboutAPI(MethodView):
     def get(self):
-        """ Returns information about this CTS instance in JSON format.
+        """Returns information about this CTS instance in JSON format.
 
         :resjson string version: The CTS server version.
         :resjson string auth_backend: The name of authorization backend this
@@ -278,15 +271,14 @@ class AboutAPI(MethodView):
             - ``ssl`` - SSL authorization is required.
         :statuscode 200: Compose updated and returned.
         """
-        json = {'version': version}
-        config_items = ['auth_backend']
+        json = {"version": version}
+        config_items = ["auth_backend"]
         for item in config_items:
             config_item = getattr(conf, item)
             # All config items have a default, so if doesn't exist it is
             # an error
             if config_item is None:
-                raise ValueError(
-                    'An invalid config item of "%s" was specified' % item)
+                raise ValueError('An invalid config item of "%s" was specified' % item)
             json[item] = config_item
         return jsonify(json), 200
 
@@ -303,7 +295,7 @@ class MetricsAPI(MethodView):
 
 class TagAPI(MethodView):
     def get(self, id):
-        """ Returns tags.
+        """Returns tags.
 
         If ``id`` is set, only the tag defined by that ID is
         returned. If ``id`` is string, it is treated as tag name.
@@ -318,8 +310,8 @@ class TagAPI(MethodView):
             p_query = filter_tags(request)
 
             json_data = {
-                'meta': pagination_metadata(p_query, request.args),
-                'items': [item.json() for item in p_query.items]
+                "meta": pagination_metadata(p_query, request.args),
+                "items": [item.json() for item in p_query.items],
             }
 
             return jsonify(json_data), 200
@@ -332,13 +324,13 @@ class TagAPI(MethodView):
             if tag:
                 return jsonify(tag.json()), 200
             else:
-                raise NotFound('No such tag found.')
+                raise NotFound("No such tag found.")
 
     @login_required
-    @require_scopes('new-tag')
-    @requires_role('admins')
+    @require_scopes("new-tag")
+    @requires_role("admins")
     def post(self):
-        """ Adds new tag to CTS database.
+        """Adds new tag to CTS database.
 
         :jsonparam str name: Tag name.
         :jsonparam str description: Tag description.
@@ -353,7 +345,7 @@ class TagAPI(MethodView):
         """
         data = request.get_json(force=True)
         if not data:
-            raise ValueError('No JSON POST data submitted.')
+            raise ValueError("No JSON POST data submitted.")
 
         name = data.get("name", None)
         if not name:
@@ -369,17 +361,21 @@ class TagAPI(MethodView):
 
         user_data = data.get("user_data", None)
         t = Tag.create(
-            db.session, g.user.username, name=name, description=description,
-            documentation=documentation, user_data=user_data
+            db.session,
+            g.user.username,
+            name=name,
+            description=description,
+            documentation=documentation,
+            user_data=user_data,
         )
         db.session.commit()
         return jsonify(t.json()), 200
 
     @login_required
-    @require_scopes('edit-tag')
-    @requires_role('admins')
+    @require_scopes("edit-tag")
+    @requires_role("admins")
     def patch(self, id):
-        """ Edit tag.
+        """Edit tag.
 
         :query number id: :ref:`ID<tag_id>` of the tag to edit.
         :jsonparam str name: Tag :ref:`name<tag_name>`. If not set, keep original value.
@@ -405,11 +401,11 @@ class TagAPI(MethodView):
         """
         t = Tag.query.filter_by(id=id).first()
         if not t:
-            raise NotFound('No such tag found.')
+            raise NotFound("No such tag found.")
 
         data = request.get_json(force=True)
         if not data:
-            raise ValueError('No JSON POST data submitted.')
+            raise ValueError("No JSON POST data submitted.")
 
         name = data.get("name", None)
         if name:
@@ -425,7 +421,12 @@ class TagAPI(MethodView):
 
         action = data.get("action", None)
         if action:
-            if action not in ["add_tagger", "remove_tagger", "add_untagger", "remove_untagger"]:
+            if action not in [
+                "add_tagger",
+                "remove_tagger",
+                "add_untagger",
+                "remove_untagger",
+            ]:
                 raise ValueError("Unknown action.")
             username = data.get("username", None)
             if not username:
@@ -433,38 +434,34 @@ class TagAPI(MethodView):
             user_data = data.get("user_data", None)
             r = getattr(t, action)(g.user.username, username, user_data)
             if not r:
-                raise ValueError('User does not exist')
+                raise ValueError("User does not exist")
         db.session.commit()
         return jsonify(t.json()), 200
 
 
 def register_api_v1():
     """ Registers version 1 of CTS API. """
-    composes_view = CTSAPI.as_view('composes')
-    tags_view = TagAPI.as_view('tags')
-    about_view = AboutAPI.as_view('about')
-    metrics_view = MetricsAPI.as_view('metrics')
+    composes_view = CTSAPI.as_view("composes")
+    tags_view = TagAPI.as_view("tags")
+    about_view = AboutAPI.as_view("about")
+    metrics_view = MetricsAPI.as_view("metrics")
     for key, val in api_v1.items():
         if key.startswith("compose"):
-            app.add_url_rule(val['url'],
-                             endpoint=key,
-                             view_func=composes_view,
-                             **val['options'])
+            app.add_url_rule(
+                val["url"], endpoint=key, view_func=composes_view, **val["options"]
+            )
         elif key.startswith("tag"):
-            app.add_url_rule(val['url'],
-                             endpoint=key,
-                             view_func=tags_view,
-                             **val['options'])
+            app.add_url_rule(
+                val["url"], endpoint=key, view_func=tags_view, **val["options"]
+            )
         elif key.startswith("about"):
-            app.add_url_rule(val['url'],
-                             endpoint=key,
-                             view_func=about_view,
-                             **val['options'])
+            app.add_url_rule(
+                val["url"], endpoint=key, view_func=about_view, **val["options"]
+            )
         elif key.startswith("metrics"):
-            app.add_url_rule(val['url'],
-                             endpoint=key,
-                             view_func=metrics_view,
-                             **val['options'])
+            app.add_url_rule(
+                val["url"], endpoint=key, view_func=metrics_view, **val["options"]
+            )
         else:
             raise ValueError("Unhandled API key: %s." % key)
 

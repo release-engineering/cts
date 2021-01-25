@@ -29,7 +29,6 @@ from utils import ModelsBaseTest
 
 
 class TestComposeModel(ModelsBaseTest):
-
     def test_create(self):
         User.create_user(username="odcs")
         self.ci.release.is_layered = True
@@ -52,16 +51,13 @@ class TestComposeModel(ModelsBaseTest):
             "respin_of": None,
             "respun_by": [],
             "compose_info": {
-                "header": {
-                    "type": "productmd.composeinfo",
-                    "version": "1.2"
-                },
+                "header": {"type": "productmd.composeinfo", "version": "1.2"},
                 "payload": {
                     "compose": {
                         "date": "20200517",
                         "id": "Fedora-Rawhide-bp-Rawhide-20200517.n.1",
                         "respin": 1,
-                        "type": "nightly"
+                        "type": "nightly",
                     },
                     "release": {
                         "internal": False,
@@ -77,9 +73,9 @@ class TestComposeModel(ModelsBaseTest):
                         "type": "ga",
                         "version": "Rawhide",
                     },
-                    "variants": {}
-                }
-            }
+                    "variants": {},
+                },
+            },
         }
         self.assertEqual(c.json(), expected_json)
 
@@ -135,7 +131,6 @@ class TestComposeModel(ModelsBaseTest):
 
 
 class TestTagModel(ModelsBaseTest):
-
     def setup_composes(self):
         User.create_user(username="odcs")
         self.compose = Compose.create(db.session, "odcs", self.ci)[0]
@@ -143,15 +138,21 @@ class TestTagModel(ModelsBaseTest):
         self.me = User.create_user("me")
         self.you = User.create_user("you")
         t = Tag.create(
-            db.session, "admin", name="periodic", description="Periodic compose",
-            documentation="http://localhost/"
+            db.session,
+            "admin",
+            name="periodic",
+            description="Periodic compose",
+            documentation="http://localhost/",
         )
         t.add_tagger("admin", "me")
         t.add_tagger("admin", "you")
         t.add_untagger("admin", "me")
         t = Tag.create(
-            db.session, "admin", name="nightly", description="Nightly compose",
-            documentation="http://localhost/"
+            db.session,
+            "admin",
+            name="nightly",
+            description="Nightly compose",
+            documentation="http://localhost/",
         )
         t.add_tagger("admin", "me")
         db.session.commit()
@@ -182,39 +183,39 @@ class TestTagModel(ModelsBaseTest):
 
         expected_tag_changes = [
             {
-                'action': 'created',
-                'message': None,
-                'user': 'admin',
-                'user_data': None,
-                'time': ANY,
+                "action": "created",
+                "message": None,
+                "user": "admin",
+                "user_data": None,
+                "time": ANY,
             },
             {
-                'action': 'add_tagger',
-                'message': 'Tagger permission granted to user "me".',
-                'user': 'admin',
-                'user_data': None,
-                'time': ANY,
+                "action": "add_tagger",
+                "message": 'Tagger permission granted to user "me".',
+                "user": "admin",
+                "user_data": None,
+                "time": ANY,
             },
             {
-                'action': 'add_tagger',
-                'message': 'Tagger permission granted to user "you".',
-                'user': 'admin',
-                'user_data': None,
-                'time': ANY,
+                "action": "add_tagger",
+                "message": 'Tagger permission granted to user "you".',
+                "user": "admin",
+                "user_data": None,
+                "time": ANY,
             },
             {
-                'action': 'add_untagger',
-                'message': 'Untagger permission granted to user "me".',
-                'user': 'admin',
-                'user_data': None,
-                'time': ANY,
+                "action": "add_untagger",
+                "message": 'Untagger permission granted to user "me".',
+                "user": "admin",
+                "user_data": None,
+                "time": ANY,
             },
             {
-                'action': 'remove_tagger',
-                'message': 'Tagger permission removed from user "me".',
-                'user': 'admin',
-                'user_data': 'Ticket #123',
-                'time': ANY,
+                "action": "remove_tagger",
+                "message": 'Tagger permission removed from user "me".',
+                "user": "admin",
+                "user_data": "Ticket #123",
+                "time": ANY,
             },
         ]
         tag_changes = [change.json() for change in t.changes()]
@@ -255,7 +256,7 @@ class TestTagModel(ModelsBaseTest):
             "id": 1,
             "name": "periodic",
             "taggers": ["me", "you"],
-            "untaggers": ["me"]
+            "untaggers": ["me"],
         }
         self.assertEqual(Tag.get_by_name("periodic").json(), expected_json)
 
@@ -287,51 +288,50 @@ class TestTagModel(ModelsBaseTest):
 
         expected_compose_changes = [
             {
-                'action': 'created',
-                'message': None,
-                'time': ANY,
-                'user': 'odcs',
-                'user_data': None
+                "action": "created",
+                "message": None,
+                "time": ANY,
+                "user": "odcs",
+                "user_data": None,
             },
             {
-                'action': 'tagged',
-                'message': 'User "odcs" added "periodic" tag.',
-                'time': ANY,
-                'user': 'odcs',
-                'user_data': "Ticket #123"
+                "action": "tagged",
+                "message": 'User "odcs" added "periodic" tag.',
+                "time": ANY,
+                "user": "odcs",
+                "user_data": "Ticket #123",
             },
             {
-                'action': 'untagged',
-                'message': 'User "odcs" removed "periodic" tag.',
-                'time': ANY,
-                'user': 'odcs',
-                'user_data': None
-            }
+                "action": "untagged",
+                "message": 'User "odcs" removed "periodic" tag.',
+                "time": ANY,
+                "user": "odcs",
+                "user_data": None,
+            },
         ]
         compose_changes = [change.json() for change in self.compose.changes()]
         self.assertEqual(compose_changes, expected_compose_changes)
 
 
 class TestUserModel(ModelsBaseTest):
-
     def test_find_by_email(self):
-        db.session.add(User(username='tester1'))
-        db.session.add(User(username='admin'))
+        db.session.add(User(username="tester1"))
+        db.session.add(User(username="admin"))
         db.session.commit()
 
-        user = User.find_user_by_name('admin')
-        self.assertEqual('admin', user.username)
+        user = User.find_user_by_name("admin")
+        self.assertEqual("admin", user.username)
 
     def test_create_user(self):
-        User.create_user(username='tester2')
+        User.create_user(username="tester2")
         db.session.commit()
 
-        user = User.find_user_by_name('tester2')
-        self.assertEqual('tester2', user.username)
+        user = User.find_user_by_name("tester2")
+        self.assertEqual("tester2", user.username)
 
     def test_no_group_is_added_if_no_groups(self):
-        User.create_user(username='tester1')
+        User.create_user(username="tester1")
         db.session.commit()
 
-        user = User.find_user_by_name('tester1')
-        self.assertEqual('tester1', user.username)
+        user = User.find_user_by_name("tester1")
+        self.assertEqual("tester1", user.username)

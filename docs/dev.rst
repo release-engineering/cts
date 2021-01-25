@@ -2,6 +2,13 @@
 Development
 ===========
 
+Code Convention
+===============
+
+The code must be well formatted via ``black`` and pass ``flake8`` checking.
+
+Run ``tox -e black,flake8`` to do the check.
+
 Install dependencies
 ====================
 

@@ -39,35 +39,52 @@ def pagination_metadata(p_query, request_args):
     # Remove pagination related args because those are handled elsewhere
     # Also, remove any args that url_for accepts in case the user entered
     # those in
-    for key in ['page', 'per_page', 'endpoint']:
+    for key in ["page", "per_page", "endpoint"]:
         if key in request_args_wo_page:
             request_args_wo_page.pop(key)
     for key in request_args:
-        if key.startswith('_'):
+        if key.startswith("_"):
             request_args_wo_page.pop(key)
     pagination_data = {
-        'page': p_query.page,
-        'pages': p_query.pages,
-        'per_page': p_query.per_page,
-        'prev': None,
-        'next': None,
-        'total': p_query.total,
-        'first': url_for(request.endpoint, page=1, per_page=p_query.per_page,
-                         _external=True, **request_args_wo_page),
-        'last': url_for(request.endpoint, page=p_query.pages,
-                        per_page=p_query.per_page, _external=True,
-                        **request_args_wo_page)
+        "page": p_query.page,
+        "pages": p_query.pages,
+        "per_page": p_query.per_page,
+        "prev": None,
+        "next": None,
+        "total": p_query.total,
+        "first": url_for(
+            request.endpoint,
+            page=1,
+            per_page=p_query.per_page,
+            _external=True,
+            **request_args_wo_page
+        ),
+        "last": url_for(
+            request.endpoint,
+            page=p_query.pages,
+            per_page=p_query.per_page,
+            _external=True,
+            **request_args_wo_page
+        ),
     }
 
     if p_query.has_prev:
-        pagination_data['prev'] = url_for(request.endpoint, page=p_query.prev_num,
-                                          per_page=p_query.per_page, _external=True,
-                                          **request_args_wo_page)
+        pagination_data["prev"] = url_for(
+            request.endpoint,
+            page=p_query.prev_num,
+            per_page=p_query.per_page,
+            _external=True,
+            **request_args_wo_page
+        )
 
     if p_query.has_next:
-        pagination_data['next'] = url_for(request.endpoint, page=p_query.next_num,
-                                          per_page=p_query.per_page, _external=True,
-                                          **request_args_wo_page)
+        pagination_data["next"] = url_for(
+            request.endpoint,
+            page=p_query.next_num,
+            per_page=p_query.per_page,
+            _external=True,
+            **request_args_wo_page
+        )
 
     return pagination_data
 
@@ -83,7 +100,7 @@ def _order_by(flask_request, query, base_class, allowed_keys, default_keys):
     If "order_by" argument starts with minus sign ('-'), the descending order
     is used.
     """
-    order_by_list = flask_request.args.getlist('order_by') or default_keys
+    order_by_list = flask_request.args.getlist("order_by") or default_keys
 
     # Handle empty "?order_by=" request and use default ordering in this case.
     if "" in order_by_list:
@@ -98,8 +115,9 @@ def _order_by(flask_request, query, base_class, allowed_keys, default_keys):
 
         if order_by not in allowed_keys:
             raise ValueError(
-                'An invalid order_by key was suplied, allowed keys are: '
-                '%r' % allowed_keys)
+                "An invalid order_by key was suplied, allowed keys are: "
+                "%r" % allowed_keys
+            )
 
         order_by_attr = getattr(base_class, order_by)
         if not order_asc:
@@ -117,14 +135,25 @@ def filter_composes(flask_request):
     search_query = dict()
 
     allowed_keys = [
-        "id", "date", "respin", "type", "label", "final", "release_name",
-        "release_version", "release_short", "release_is_layered", "release_type",
-        "release_internal", "base_product_name", "base_product_short",
-        "base_product_version", "base_product_type", "builder"
+        "id",
+        "date",
+        "respin",
+        "type",
+        "label",
+        "final",
+        "release_name",
+        "release_version",
+        "release_short",
+        "release_is_layered",
+        "release_type",
+        "release_internal",
+        "base_product_name",
+        "base_product_short",
+        "base_product_version",
+        "base_product_type",
+        "builder",
     ]
-    allowed_suffixes = [
-        "", "_contains", "_startswith", "_endswith"
-    ]
+    allowed_suffixes = ["", "_contains", "_startswith", "_endswith"]
     for key in allowed_keys:
         for suffix in allowed_suffixes:
             if flask_request.args.get(key + suffix, None):
@@ -163,11 +192,10 @@ def filter_composes(flask_request):
                 else:
                     query = query.filter(Tag.name == tag)
 
-    query = _order_by(flask_request, query, Compose,
-                      allowed_keys, ["-date", "-id"])
+    query = _order_by(flask_request, query, Compose, allowed_keys, ["-date", "-id"])
 
-    page = flask_request.args.get('page', 1, type=int)
-    per_page = flask_request.args.get('per_page', 10, type=int)
+    page = flask_request.args.get("page", 1, type=int)
+    per_page = flask_request.args.get("per_page", 10, type=int)
     return query.paginate(page, per_page, False)
 
 
@@ -179,7 +207,7 @@ def filter_tags(flask_request):
     """
     search_query = dict()
 
-    for key in ['id', 'name']:
+    for key in ["id", "name"]:
         if flask_request.args.get(key, None):
             search_query[key] = flask_request.args[key]
 
@@ -188,9 +216,8 @@ def filter_tags(flask_request):
     if search_query:
         query = query.filter_by(**search_query)
 
-    query = _order_by(flask_request, query, Tag,
-                      ["id", 'name'], ["-id"])
+    query = _order_by(flask_request, query, Tag, ["id", "name"], ["-id"])
 
-    page = flask_request.args.get('page', 1, type=int)
-    per_page = flask_request.args.get('per_page', 10, type=int)
+    page = flask_request.args.get("page", 1, type=int)
+    per_page = flask_request.args.get("per_page", 10, type=int)
     return query.paginate(page, per_page, False)

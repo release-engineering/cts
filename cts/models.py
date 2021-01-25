@@ -40,11 +40,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import FlushError
 from flask_sqlalchemy import SignallingSession
 
-event.listen(SignallingSession, 'after_flush',
-             cache_composes_if_state_changed)
+event.listen(SignallingSession, "after_flush", cache_composes_if_state_changed)
 
-event.listen(SignallingSession, 'after_commit',
-             start_to_publish_messages)
+event.listen(SignallingSession, "after_commit", start_to_publish_messages)
 
 
 def commit_on_success(func):
@@ -56,6 +54,7 @@ def commit_on_success(func):
             raise
         finally:
             db.session.commit()
+
     return _decorator
 
 
@@ -79,7 +78,7 @@ class CTSBase(db.Model):
 class User(CTSBase, UserMixin):
     """User information table"""
 
-    __tablename__ = 'users'
+    __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(200), nullable=False, unique=True)
@@ -106,9 +105,15 @@ class User(CTSBase, UserMixin):
 
 composes_to_composes = db.Table(
     "composes_to_composes",
-    db.Column("parent_compose_id", db.String, db.ForeignKey("composes.id"), nullable=False),
-    db.Column("child_compose_id", db.String, db.ForeignKey("composes.id"), nullable=False),
-    db.UniqueConstraint("parent_compose_id", "child_compose_id", name="unique_composes"),
+    db.Column(
+        "parent_compose_id", db.String, db.ForeignKey("composes.id"), nullable=False
+    ),
+    db.Column(
+        "child_compose_id", db.String, db.ForeignKey("composes.id"), nullable=False
+    ),
+    db.UniqueConstraint(
+        "parent_compose_id", "child_compose_id", name="unique_composes"
+    ),
 )
 
 
@@ -147,7 +152,9 @@ class TagChange(CTSBase):
     # Action: "created", "add_tagger", "remove_tagger", "add_tagger", "remove_untagger"
     action = db.Column(db.String)
     # User which did the Tag change.
-    user_id = db.Column("user_id", db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(
+        "user_id", db.Integer, db.ForeignKey("users.id"), nullable=False
+    )
     user = db.relationship("User", lazy=False)
     # Automatic message with more information about this change.
     message = db.Column(db.String, nullable=True)
@@ -157,7 +164,9 @@ class TagChange(CTSBase):
     @classmethod
     def create(cls, session, tag, username, **kwargs):
         user = User.find_user_by_name(username)
-        tag_change = cls(time=datetime.utcnow(), tag_id=tag.id, user_id=user.id, **kwargs)
+        tag_change = cls(
+            time=datetime.utcnow(), tag_id=tag.id, user_id=user.id, **kwargs
+        )
         session.add(tag_change)
         session.commit()
         return tag_change
@@ -192,7 +201,9 @@ class Tag(CTSBase):
         session.add(tag)
         session.commit()
 
-        TagChange.create(session, tag, logged_user, action="created", user_data=user_data)
+        TagChange.create(
+            session, tag, logged_user, action="created", user_data=user_data
+        )
         return tag
 
     @classmethod
@@ -221,7 +232,11 @@ class Tag(CTSBase):
             return False
 
         TagChange.create(
-            db.session, self, logged_user, action="add_tagger", user_data=user_data,
+            db.session,
+            self,
+            logged_user,
+            action="add_tagger",
+            user_data=user_data,
             message='Tagger permission granted to user "%s".' % username,
         )
         self.taggers.append(u)
@@ -248,7 +263,11 @@ class Tag(CTSBase):
             return True
 
         TagChange.create(
-            db.session, self, logged_user, action="remove_tagger", user_data=user_data,
+            db.session,
+            self,
+            logged_user,
+            action="remove_tagger",
+            user_data=user_data,
             message='Tagger permission removed from user "%s".' % username,
         )
 
@@ -268,7 +287,11 @@ class Tag(CTSBase):
             return False
 
         TagChange.create(
-            db.session, self, logged_user, action="add_untagger", user_data=user_data,
+            db.session,
+            self,
+            logged_user,
+            action="add_untagger",
+            user_data=user_data,
             message='Untagger permission granted to user "%s".' % username,
         )
 
@@ -295,7 +318,11 @@ class Tag(CTSBase):
             return True
 
         TagChange.create(
-            db.session, self, logged_user, action="remove_untagger", user_data=user_data,
+            db.session,
+            self,
+            logged_user,
+            action="remove_untagger",
+            user_data=user_data,
             message='Untagger permission removed from user "%s".' % username,
         )
 
@@ -303,7 +330,8 @@ class Tag(CTSBase):
 
     def changes(self):
         return (
-            db.session.query(TagChange).filter_by(tag_id=self.id)
+            db.session.query(TagChange)
+            .filter_by(tag_id=self.id)
             .order_by(TagChange.id)
             .all()
         )
@@ -330,7 +358,9 @@ class ComposeChange(CTSBase):
     # Action: "created", "tagged", "untagged"
     action = db.Column(db.String)
     # User which did the Compose change.
-    user_id = db.Column("user_id", db.Integer, db.ForeignKey("users.id"), nullable=False)
+    user_id = db.Column(
+        "user_id", db.Integer, db.ForeignKey("users.id"), nullable=False
+    )
     user = db.relationship("User", lazy=False)
     # Automatic message with more information about this change.
     message = db.Column(db.String, nullable=True)
@@ -395,19 +425,26 @@ class Compose(CTSBase):
         backref="children",
     )
 
-    respin_of_id = db.Column(db.String, db.ForeignKey('composes.id'))
+    respin_of_id = db.Column(db.String, db.ForeignKey("composes.id"))
     # Add "respin_of" and "respun_by" relationships between composes.
     respin_of = db.relationship(
         "Compose",
         remote_side=[id],
-        backref=backref('respun_by'),
+        backref=backref("respun_by"),
         uselist=False,
-        foreign_keys=[respin_of_id]
+        foreign_keys=[respin_of_id],
     )
 
     @classmethod
-    def create(cls, session, builder, ci, user_data=None, parent_compose_ids=None,
-               respin_of=None):
+    def create(
+        cls,
+        session,
+        builder,
+        ci,
+        user_data=None,
+        parent_compose_ids=None,
+        respin_of=None,
+    ):
         """
         Creates new Compose and commits it to database ensuring that its ID is unique.
 
@@ -425,9 +462,13 @@ class Compose(CTSBase):
         # the parent_compose_ids are correct.
         parent_composes = []
         for parent_compose_id in parent_compose_ids or []:
-            parent_compose = Compose.query.filter(Compose.id == parent_compose_id).first()
+            parent_compose = Compose.query.filter(
+                Compose.id == parent_compose_id
+            ).first()
             if not parent_compose:
-                raise ValueError("Cannot find parent compose with id %s." % parent_compose_id)
+                raise ValueError(
+                    "Cannot find parent compose with id %s." % parent_compose_id
+                )
             parent_composes.append(parent_compose)
 
         # Find respin_of Compose instance before creating the Compose to be sure
@@ -435,7 +476,9 @@ class Compose(CTSBase):
         if respin_of:
             respin_of_compose = Compose.query.filter(Compose.id == respin_of).first()
             if not respin_of_compose:
-                raise ValueError("Cannot find respin_of compose with id %s." % respin_of)
+                raise ValueError(
+                    "Cannot find respin_of compose with id %s." % respin_of
+                )
 
         while True:
             kwargs = {
@@ -470,7 +513,8 @@ class Compose(CTSBase):
                 # Really check that the IntegrityError was caused by
                 # existing compose.
                 existing_compose = Compose.query.filter(
-                    Compose.id == kwargs["id"]).first()
+                    Compose.id == kwargs["id"]
+                ).first()
                 if not existing_compose:
                     raise
             # In case session.commit() failed with IntegrityErroir, increase
@@ -486,7 +530,9 @@ class Compose(CTSBase):
             compose.respin_of = respin_of_compose
         session.commit()
 
-        ComposeChange.create(session, compose, builder, action="created", user_data=user_data)
+        ComposeChange.create(
+            session, compose, builder, action="created", user_data=user_data
+        )
         return compose, ci
 
     def json(self, full=False):
@@ -535,8 +581,12 @@ class Compose(CTSBase):
             return True
 
         ComposeChange.create(
-            db.session, self, logged_user, action="tagged", user_data=user_data,
-            message='User "%s" added "%s" tag.' % (logged_user, tag_name)
+            db.session,
+            self,
+            logged_user,
+            action="tagged",
+            user_data=user_data,
+            message='User "%s" added "%s" tag.' % (logged_user, tag_name),
         )
         self.tags.append(t)
         return True
@@ -561,14 +611,19 @@ class Compose(CTSBase):
             return True
 
         ComposeChange.create(
-            db.session, self, logged_user, action="untagged", user_data=user_data,
-            message='User "%s" removed "%s" tag.' % (logged_user, tag_name)
+            db.session,
+            self,
+            logged_user,
+            action="untagged",
+            user_data=user_data,
+            message='User "%s" removed "%s" tag.' % (logged_user, tag_name),
         )
         return True
 
     def changes(self):
         return (
-            db.session.query(ComposeChange).filter_by(compose_id=self.id)
+            db.session.query(ComposeChange)
+            .filter_by(compose_id=self.id)
             .order_by(ComposeChange.id)
             .all()
         )
