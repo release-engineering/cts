@@ -435,6 +435,9 @@ class Compose(CTSBase):
         foreign_keys=[respin_of_id],
     )
 
+    # Current URL to the top level directory of this compose
+    compose_url = db.Column(db.String, nullable=True)
+
     @classmethod
     def create(
         cls,
@@ -444,6 +447,7 @@ class Compose(CTSBase):
         user_data=None,
         parent_compose_ids=None,
         respin_of=None,
+        compose_url=None,
     ):
         """
         Creates new Compose and commits it to database ensuring that its ID is unique.
@@ -454,6 +458,7 @@ class Compose(CTSBase):
         :param str user_data: Optional user data to add to ComposeChange record.
         :param list parent_compose_ids: List of parent compose IDs.
         :param str respin_of: Compose ID of compose this compose respins.
+        :param str compose_url: Current URL to the top level directory of this compose.
         :return tuple: (Compose, productmd.ComposeInfo) - tuple with newly created
             Compose and changed ComposeInfo metadata.
         """
@@ -499,6 +504,7 @@ class Compose(CTSBase):
                 "base_product_version": ci.base_product.version,
                 "base_product_type": ci.base_product.type,
                 "builder": builder,
+                "compose_url": compose_url,
             }
             compose = cls(**kwargs)
             session.add(compose)
@@ -561,6 +567,7 @@ class Compose(CTSBase):
             "children": [c.id for c in self.children],
             "respin_of": self.respin_of.id if self.respin_of else None,
             "respun_by": [c.id for c in self.respun_by],
+            "compose_url": self.compose_url,
         }
 
     def tag(self, logged_user, tag_name, user_data=None):

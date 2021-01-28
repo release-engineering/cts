@@ -18,6 +18,7 @@ The CTS Compose is always represented in the API requests as JSON, for example:
         "children": [],
         "respin_of": None,
         "respun_by": [],
+        "compose_url": "http://localhost/compose/Fedora-Rawhide-bp-Rawhide-20200517.n.1",
         "compose_info": {
             "header": {
                 "type": "productmd.composeinfo",
@@ -85,6 +86,11 @@ The fields used in the CTS compose JSON have following meaning:
 
 *respun_by* - ``(list of strings)``
     Compose IDs of composes respinning this compose.
+
+.. _compose_url:
+
+*compose_url* - ``(string)``
+    Current URL to the top level directory of this compose.
 
 
 CTS Compose Tag JSON representation

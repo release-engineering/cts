@@ -22,6 +22,8 @@
 # Written by Jan Kaluza <jkaluza@redhat.com>
 
 import json
+import os
+
 from productmd import ComposeInfo
 from flask.views import MethodView
 from flask import request, jsonify, g, Response
@@ -85,6 +87,12 @@ api_v1 = {
         "url": "/api/1/tags/",
         "options": {
             "methods": ["POST"],
+        },
+    },
+    "repo": {
+        "url": "/api/1/composes/<id>/repo/",
+        "options": {
+            "methods": ["GET"],
         },
     },
     "about": {"url": "/api/1/about/", "options": {"methods": ["GET"]}},
@@ -163,6 +171,7 @@ class CTSAPI(MethodView):
             this compose.
         :jsonparam string respin_of: Compose ID of the original compose which this compose
             respins.
+        :jsonparam string compose_url: URL to the top level directory of this compose.
 
         :statuscode 200: Compose request created and updated ComposeInfo returned.
         :statuscode 400: Request not in valid format.
@@ -184,6 +193,7 @@ class CTSAPI(MethodView):
 
         parent_compose_ids = data.get("parent_compose_ids", None)
         respin_of = data.get("respin_of", None)
+        compose_url = data.get("compose_url", None)
 
         ci = Compose.create(
             db.session,
@@ -191,6 +201,7 @@ class CTSAPI(MethodView):
             ci,
             parent_compose_ids=parent_compose_ids,
             respin_of=respin_of,
+            compose_url=compose_url,
         )[1]
         return jsonify(json.loads(ci.dumps())), 200
 
@@ -203,10 +214,12 @@ class CTSAPI(MethodView):
 
             - ``tag`` - Add ``tag`` to compose.
             - ``untag`` - Remove ``tag`` from compose.
+            - ``set_url`` - Update compose_url.
         :jsonparam str tag: Tag to use.
         :jsonparam str user_data: Optional data stored in the compose change history
             for this compose change. For example URL to ticket requesting this compose
             change.
+        :jsonparam str compose_url: URL to the top level directory of the compose.
 
         :statuscode 200: Compose updated and returned.
         :statuscode 401: User is unathorized for this change.
@@ -226,6 +239,8 @@ class CTSAPI(MethodView):
 
         user_data = data.get("user_data", None)
 
+        is_admin = has_role("admins")
+
         if action in ["tag", "untag"]:
             tag_name = data.get("tag", None)
             if not tag_name:
@@ -234,7 +249,6 @@ class CTSAPI(MethodView):
             if not tag:
                 raise ValueError('Tag "%s" does not exist' % tag_name)
 
-            is_admin = has_role("admins")
             if action == "tag":
                 if g.user not in tag.taggers and not is_admin:
                     raise Forbidden(
@@ -249,6 +263,19 @@ class CTSAPI(MethodView):
                         '"%s".' % (g.user.username, tag_name)
                     )
                 compose.untag(g.user.username, tag_name, user_data)
+        elif action == "set_url":
+            if not has_role("allowed_builders") and not is_admin:
+                raise Forbidden(
+                    'User "%s" does not have permission to set compose_url'
+                    % g.user.username
+                )
+
+            compose_url = data.get("compose_url", None)
+            if compose_url is None:
+                raise ValueError('No "compose_url" field in JSON PATCH data.')
+            if not compose_url.startswith("http"):
+                raise ValueError('"compose_url" field must be a valid http(s) URL')
+            compose.compose_url = compose_url
         else:
             raise ValueError("Unknown action.")
 
@@ -439,12 +466,45 @@ class TagAPI(MethodView):
         return jsonify(t.json()), 200
 
 
+class RepoAPI(MethodView):
+    def get(self, id):
+        """Returns content of repofile.
+
+        :query string variant: Return variant repofile content.
+        :statuscode 200: Repofile content are returned.
+        :statuscode 400: Invalid request.
+        :statuscode 404: Compose not found.
+        """
+        compose = Compose.query.filter_by(id=id).first()
+        if not compose:
+            raise NotFound("No such compose found.")
+
+        variant = request.args.get("variant")
+        if not variant:
+            raise ValueError("variant is required.")
+
+        if not compose.compose_url:
+            raise NotFound("Compose does not have any URL set")
+
+        baseurl = os.path.join(compose.compose_url, "compose", variant, "$basearch/os")
+        content = """[{compose.id}-{variant}]
+name=Compose {compose.id} (RPMs) - {variant}
+baseurl={baseurl}
+enabled=1
+gpgcheck=0
+""".format(
+            compose=compose, variant=variant, baseurl=baseurl
+        )
+        return Response(content, content_type="text/plain")
+
+
 def register_api_v1():
     """ Registers version 1 of CTS API. """
     composes_view = CTSAPI.as_view("composes")
     tags_view = TagAPI.as_view("tags")
     about_view = AboutAPI.as_view("about")
     metrics_view = MetricsAPI.as_view("metrics")
+    repo_view = RepoAPI.as_view("repo")
     for key, val in api_v1.items():
         if key.startswith("compose"):
             app.add_url_rule(
@@ -461,6 +521,10 @@ def register_api_v1():
         elif key.startswith("metrics"):
             app.add_url_rule(
                 val["url"], endpoint=key, view_func=metrics_view, **val["options"]
+            )
+        elif key.startswith("repo"):
+            app.add_url_rule(
+                val["url"], endpoint=key, view_func=repo_view, **val["options"]
             )
         else:
             raise ValueError("Unhandled API key: %s." % key)

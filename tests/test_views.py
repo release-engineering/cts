@@ -824,3 +824,85 @@ class TestViewsComposeTagging(ViewBaseTest):
         self.assertEqual(data["error"], "Bad Request")
         self.assertEqual(data["status"], 400)
         self.assertEqual(data["message"], 'Tag "not-existing" does not exist')
+
+
+class TestViewsComposeRepo(ViewBaseTest):
+    maxDiff = None
+
+    def setup_composes(self):
+        User.create_user(username="odcs")
+        self.c = Compose.create(db.session, "odcs", self.ci)[0]
+        self.c.compose_url = "http://localhost/composes/Fedora-Rawhide-20200517.n.1"
+        db.session.commit()
+
+    def test_composes_patch_repo(self):
+        url = "http://127.0.0.1/composes/Fedora-Rawhide-20200517.n.1"
+        with self.test_request_context(user="odcs"):
+            req = {"action": "set_url", "compose_url": url}
+            rv = self.client.patch(
+                "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
+            )
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(data["compose_url"], url)
+
+    def test_composes_patch_repo_missing_compose_url(self):
+        with self.test_request_context(user="odcs"):
+            req = {"action": "set_url"}
+            rv = self.client.patch(
+                "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
+            )
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "400 BAD REQUEST")
+        self.assertEqual(data["error"], "Bad Request")
+        self.assertEqual(data["status"], 400)
+        self.assertEqual(data["message"], 'No "compose_url" field in JSON PATCH data.')
+
+    def test_composes_patch_repo_wrong_compose_url(self):
+        with self.test_request_context(user="odcs"):
+            req = {"action": "set_url", "compose_url": "invalid-url"}
+            rv = self.client.patch(
+                "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
+            )
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "400 BAD REQUEST")
+        self.assertEqual(data["error"], "Bad Request")
+        self.assertEqual(data["status"], 400)
+        self.assertEqual(
+            data["message"], '"compose_url" field must be a valid http(s) URL'
+        )
+
+    def test_composes_get_repo(self):
+        with self.test_request_context(user="odcs"):
+            rv = self.client.get(
+                "/api/1/composes/Fedora-Rawhide-20200517.n.1/repo/?variant=AppStream"
+            )
+            data = rv.get_data(as_text=True)
+        expected_data = """[Fedora-Rawhide-20200517.n.1-AppStream]
+name=Compose Fedora-Rawhide-20200517.n.1 (RPMs) - AppStream
+baseurl=http://localhost/composes/Fedora-Rawhide-20200517.n.1/compose/AppStream/$basearch/os
+enabled=1
+gpgcheck=0
+"""
+        self.assertEqual(data, expected_data)
+
+    def test_composes_get_repo_no_compose_url(self):
+        self.c.compose_url = None
+        db.session.commit()
+        with self.test_request_context(user="odcs"):
+            rv = self.client.get(
+                "/api/1/composes/Fedora-Rawhide-20200517.n.1/repo/?variant=AppStream"
+            )
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "404 NOT FOUND")
+        self.assertEqual(data["error"], "Not Found")
+        self.assertEqual(data["status"], 404)
+        self.assertEqual(data["message"], "Compose does not have any URL set")
+
+    def test_composes_get_repo_missing_variant(self):
+        with self.test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/composes/Fedora-Rawhide-20200517.n.1/repo/")
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "400 BAD REQUEST")
+        self.assertEqual(data["error"], "Bad Request")
+        self.assertEqual(data["status"], 400)
+        self.assertEqual(data["message"], "variant is required.")

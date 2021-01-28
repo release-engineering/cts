@@ -50,6 +50,7 @@ class TestComposeModel(ModelsBaseTest):
             "children": [],
             "respin_of": None,
             "respun_by": [],
+            "compose_url": None,
             "compose_info": {
                 "header": {"type": "productmd.composeinfo", "version": "1.2"},
                 "payload": {
