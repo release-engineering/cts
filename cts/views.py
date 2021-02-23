@@ -25,8 +25,8 @@ import json
 import os
 
 from productmd import ComposeInfo
-from flask.views import MethodView
-from flask import request, jsonify, g, Response
+from flask.views import MethodView, View
+from flask import render_template, request, jsonify, g, Response
 from flask_login import login_required
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
@@ -498,6 +498,14 @@ gpgcheck=0
         return Response(content, content_type="text/plain")
 
 
+class Index(View):
+
+    methods = ["GET"]
+
+    def dispatch_request(self):
+        return render_template("index.html")
+
+
 def register_api_v1():
     """ Registers version 1 of CTS API. """
     composes_view = CTSAPI.as_view("composes")
@@ -530,4 +538,5 @@ def register_api_v1():
             raise ValueError("Unhandled API key: %s." % key)
 
 
+app.add_url_rule("/", view_func=Index.as_view("index"))
 register_api_v1()

@@ -138,6 +138,12 @@ class TestViews(ViewBaseTest):
         self.c1 = Compose.create(db.session, "odcs", self.ci)[0]
         Compose.create(db.session, "odcs", self.ci)
 
+    def test_index(self):
+        rv = self.client.get("/")
+        data = rv.get_data(as_text=True)
+        self.assertEqual(rv.status, "200 OK")
+        self.assertIn("Compose Tracking Service (CTS)", data)
+
     def test_about_get(self):
         rv = self.client.get("/api/1/about/")
         data = json.loads(rv.get_data(as_text=True))
