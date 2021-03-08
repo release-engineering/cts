@@ -22,6 +22,7 @@
 
 import contextlib
 import json
+import unittest
 
 
 import flask
@@ -226,6 +227,61 @@ class TestViews(ViewBaseTest):
             "Fedora-Rawhide-20200518.n.0",
             "Fedora-Rawhide-20200517.n.2",
             "Fedora-Rawhide-20200517.n.1",
+        ]
+        self.assertEqual(expected_compose_ids, compose_ids)
+
+    @unittest.skipUnless(
+        app.config["SQLALCHEMY_DATABASE_URI"].startswith("postgres"),
+        "postresql database is reqiuired for this test",
+    )
+    def test_composes_get_order_by_release_version(self):
+        self.ci.release.short = "DP"
+        for relver, date in [
+            ("1.0", "20200518"),
+            ("1.20", "20200518"),
+            ("1.5", "20200517"),
+            ("1.0", "20200517"),
+        ]:
+            self.ci.release.version = relver
+            self.ci.compose.date = date
+            self.ci.compose.id = "{}-{}-{}.n.{}".format(
+                self.ci.release.short, relver, date, self.ci.compose.respin
+            )
+            Compose.create(db.session, "odcs", self.ci)
+
+        with self.test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/composes/?order_by=release_version")
+            data = json.loads(rv.get_data(as_text=True))
+
+        compose_ids = [
+            c["compose_info"]["payload"]["compose"]["id"] for c in data["items"]
+        ]
+        expected_compose_ids = [
+            "Fedora-Rawhide-20200517.n.1",
+            "Fedora-Rawhide-20200517.n.2",
+            "DP-1.0-20200518.n.2",
+            "DP-1.0-20200517.n.2",
+            "DP-1.5-20200517.n.2",
+            "DP-1.20-20200518.n.2",
+        ]
+        self.assertEqual(expected_compose_ids, compose_ids)
+
+        with self.test_request_context(user="odcs"):
+            rv = self.client.get(
+                "/api/1/composes/?order_by=release_version&order_by=date"
+            )
+            data = json.loads(rv.get_data(as_text=True))
+
+        compose_ids = [
+            c["compose_info"]["payload"]["compose"]["id"] for c in data["items"]
+        ]
+        expected_compose_ids = [
+            "Fedora-Rawhide-20200517.n.1",
+            "Fedora-Rawhide-20200517.n.2",
+            "DP-1.0-20200517.n.2",
+            "DP-1.0-20200518.n.2",
+            "DP-1.5-20200517.n.2",
+            "DP-1.20-20200518.n.2",
         ]
         self.assertEqual(expected_compose_ids, compose_ids)
 

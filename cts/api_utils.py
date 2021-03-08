@@ -21,6 +21,7 @@
 
 import copy
 from flask import request, url_for
+from sqlalchemy import cast, func, ARRAY, Integer
 
 from cts.models import Compose, Tag
 
@@ -120,6 +121,13 @@ def _order_by(flask_request, query, base_class, allowed_keys, default_keys):
             )
 
         order_by_attr = getattr(base_class, order_by)
+        if order_by == "release_version":
+            order_by_attr = cast(
+                func.string_to_array(
+                    func.regexp_replace(order_by_attr, "[^0-9.]", "", "g"), "."
+                ),
+                ARRAY(Integer),
+            )
         if not order_asc:
             order_by_attr = order_by_attr.desc()
         query = query.order_by(order_by_attr)
