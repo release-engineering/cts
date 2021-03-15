@@ -1,0 +1,18 @@
+FROM fedora:33
+LABEL \
+    name="CTS test" \
+    description="Run tests using tox" \
+    vendor="CTS developers" \
+    license="MIT"
+
+RUN dnf -y update && dnf -y install \
+    findutils \
+    python3-ldap \
+    python3-tox \
+    && dnf clean all
+
+WORKDIR /src
+
+COPY . .
+
+CMD ["tox"]
