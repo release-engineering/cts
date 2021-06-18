@@ -35,13 +35,13 @@ node('docker') {
     checkout scm
     stage('Build Docker container') {
         def appversion = sh(returnStdout: true, script: './get-version.sh').trim()
+        // Inject appversion so that we can know which version of image is used via about page
+        sh """sed -i -e "s/version=.*/version='$appversion',/" setup.py"""
+
         /* Git builds will have a version like 0.3.2.dev1+git.3abbb08 following
          * the rules in PEP440. But Docker does not let us have + in the tag
          * name, so let's munge it here. */
         appversion = appversion.replace('+', '-')
-        /* Git builds will have a version like 0.3.2.dev1+git.3abbb08 following
-         * the rules in PEP440. But Docker does not let us have + in the tag
-         * name, so let's munge it here. */
         docker.withRegistry(
                 'https://docker-registry.upshift.redhat.com/',
                 'compose-upshift-registry-token') {

@@ -507,7 +507,7 @@ class Index(View):
 
 
 def register_api_v1():
-    """ Registers version 1 of CTS API. """
+    """Registers version 1 of CTS API."""
     composes_view = CTSAPI.as_view("composes")
     tags_view = TagAPI.as_view("tags")
     about_view = AboutAPI.as_view("about")

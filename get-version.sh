@@ -6,7 +6,7 @@
 
 set -e
 
-name=greenwave
+name=cts
 if [ "$(git tag | wc -l)" -eq 0 ] ; then
     # never been tagged since the project is just starting out
     lastversion="0.0"
