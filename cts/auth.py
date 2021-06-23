@@ -71,6 +71,8 @@ def load_krb_user_from_request(request):
     """
     remote_user = request.environ.get("REMOTE_USER")
     if not remote_user:
+        if request.method == "GET":
+            return None
         raise Unauthorized("REMOTE_USER is not present in request.")
 
     username, realm = remote_user.split("@")
@@ -104,6 +106,8 @@ def load_ssl_user_from_request(request):
     """
     ssl_client_verify = request.environ.get("SSL_CLIENT_VERIFY")
     if ssl_client_verify != "SUCCESS":
+        if request.method == "GET":
+            return None
         raise Unauthorized("Cannot verify client: %s" % ssl_client_verify)
 
     username = request.environ.get("SSL_CLIENT_S_DN")
@@ -149,6 +153,8 @@ def load_openidc_user(request):
     """Load FAS user from current request"""
     username = request.environ.get("REMOTE_USER")
     if not username:
+        if request.method == "GET":
+            return None
         raise Unauthorized("REMOTE_USER is not present in request.")
 
     token = request.environ.get("OIDC_access_token")
