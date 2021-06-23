@@ -515,6 +515,25 @@ class TestViews(ViewBaseTest):
         }
         self.assertEqual(data, expected_data)
 
+    def test_tags_post_existed(self):
+        with self.test_request_context(user="root"):
+            req = {
+                "name": "periodic",
+                "description": "Periodic compose",
+                "documentation": "Foo",
+                "user_data": "Ticket #123",
+            }
+            rv = self.client.post("/api/1/tags/", json=req)
+            self.assertEqual(rv.status, "200 OK")
+
+            rv = self.client.post("/api/1/tags/", json=req)
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(rv.status, "400 BAD REQUEST")
+        self.assertEqual(data["error"], "Bad Request")
+        self.assertEqual(data["status"], 400)
+        self.assertEqual(data["message"], "Tag %s already exists" % req["name"])
+
     def test_tags_post_unathorized(self):
         with self.test_request_context(user="odcs"):
             req = {
@@ -563,6 +582,25 @@ class TestViews(ViewBaseTest):
             "untaggers": [],
         }
         self.assertEqual(data, expected_data)
+
+    def test_tags_patch_existed(self):
+        self.test_tags_post()
+        with self.test_request_context(user="root"):
+            for name in ["t1", "t2"]:
+                req = {
+                    "name": name,
+                    "description": "test",
+                    "documentation": "test",
+                }
+                self.client.post("/api/1/tags/", json=req)
+
+            rv = self.client.patch("/api/1/tags/1", json={"name": "t2"})
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(rv.status, "400 BAD REQUEST")
+        self.assertEqual(data["error"], "Bad Request")
+        self.assertEqual(data["status"], 400)
+        self.assertEqual(data["message"], "Tag %s already exists" % req["name"])
 
     def test_tags_patch_unauthorized(self):
         self.test_tags_post()

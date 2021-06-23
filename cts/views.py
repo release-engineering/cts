@@ -29,6 +29,7 @@ from flask.views import MethodView, View
 from flask import render_template, request, jsonify, g, Response
 from flask_login import login_required
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from sqlalchemy.exc import IntegrityError
 
 from cts import app, conf, version, db
 from cts.errors import NotFound, Forbidden
@@ -387,15 +388,20 @@ class TagAPI(MethodView):
             raise ValueError('Tag "documentation" is not defined.')
 
         user_data = data.get("user_data", None)
-        t = Tag.create(
-            db.session,
-            g.user.username,
-            name=name,
-            description=description,
-            documentation=documentation,
-            user_data=user_data,
-        )
-        db.session.commit()
+        try:
+            t = Tag.create(
+                db.session,
+                g.user.username,
+                name=name,
+                description=description,
+                documentation=documentation,
+                user_data=user_data,
+            )
+            db.session.commit()
+        except IntegrityError as e:
+            if "unique constraint" in str(e).lower():
+                raise ValueError("Tag %s already exists" % name)
+            raise ValueError(str(e))
         return jsonify(t.json()), 200
 
     @login_required
@@ -462,7 +468,13 @@ class TagAPI(MethodView):
             r = getattr(t, action)(g.user.username, username, user_data)
             if not r:
                 raise ValueError("User does not exist")
-        db.session.commit()
+
+        try:
+            db.session.commit()
+        except IntegrityError as e:
+            if "unique constraint" in str(e).lower():
+                raise ValueError("Tag %s already exists" % name)
+            raise ValueError(str(e))
         return jsonify(t.json()), 200
 
 
