@@ -19,46 +19,17 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from flask_script import Manager
-from functools import wraps
-import flask_migrate
 import logging
 import os
 import ssl
 
-from cts import app, conf, db, models
+import click
+import flask_migrate
 
+from flask.cli import FlaskGroup
+from werkzeug.serving import run_simple
 
-manager = Manager(app)
-help_args = ("-?", "--help")
-manager.help_args = help_args
-migrations_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "migrations")
-migrate = flask_migrate.Migrate(app, db, directory=migrations_dir)
-manager.add_command("db", flask_migrate.MigrateCommand)
-
-
-def console_script_help(f):
-    @wraps(f)
-    def wrapped(*args, **kwargs):
-        import sys
-
-        if any([arg in help_args for arg in sys.argv[1:]]):
-            command = os.path.basename(sys.argv[0])
-            print(
-                """{0}
-
-Usage: {0} [{1}]
-
-See also:
-  cts-manager(1)""".format(
-                    command, "|".join(help_args)
-                )
-            )
-            sys.exit(2)
-        r = f(*args, **kwargs)
-        return r
-
-    return wrapped
+from cts import app, conf, db
 
 
 def _establish_ssl_context():
@@ -86,29 +57,16 @@ def _establish_ssl_context():
     return ssl_ctx
 
 
-@console_script_help
-@manager.command
-def upgradedb():
-    """Upgrades the database schema to the latest revision"""
-    app.config["SERVER_NAME"] = "localhost"
-    migrations_dir = os.path.join(
-        os.path.abspath(os.path.dirname(__file__)), "migrations"
-    )
-    with app.app_context():
-        flask_migrate.upgrade(directory=migrations_dir)
+@click.group(cls=FlaskGroup, create_app=lambda *args, **kwargs: app)
+def cli():
+    """Manage CTS application"""
 
 
-@console_script_help
-@manager.command
-def cleardb():
-    """Clears the database"""
-    models.Event.query.delete()
-    models.ArtifactBuild.query.delete()
-    db.session.commit()
+migrations_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "migrations")
+flask_migrate.Migrate(app, db, directory=migrations_dir)
 
 
-@manager.command
-@console_script_help
+@cli.command()
 def generatelocalhostcert():
     """Creates a public/private key pair for message signing and the frontend"""
     from OpenSSL import crypto
@@ -145,23 +103,17 @@ def generatelocalhostcert():
         cert_file.write(crypto.dump_certificate(crypto.FILETYPE_PEM, cert))
 
 
-@console_script_help
-@manager.command
+@cli.command()
+@click.option("-h", "--host", default=conf.host, help="Bind to this address")
+@click.option("-p", "--port", type=int, default=conf.port, help="Listen on this port")
+@click.option("-d", "--debug", is_flag=True, default=conf.debug, help="Debug mode")
 def runssl(host=conf.host, port=conf.port, debug=conf.debug):
     """Runs the Flask app with the HTTPS settings configured in config.py"""
     logging.info("Starting CTS frontend")
 
     ssl_ctx = _establish_ssl_context()
-    app.run(host=host, port=port, ssl_context=ssl_ctx, debug=debug)
-
-
-def manager_wrapper():
-    """
-    Runs the manager. We have separate method for this so we can use it in
-    `console_scripts` part of setup.py
-    """
-    manager.run()
+    run_simple(host, port, app, use_debugger=debug, ssl_context=ssl_ctx)
 
 
 if __name__ == "__main__":
-    manager_wrapper()
+    cli()

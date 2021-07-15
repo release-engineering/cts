@@ -50,10 +50,7 @@ setup(
     dependency_links=deps_links,
     entry_points={
         "console_scripts": [
-            "cts-frontend = cts.manage:runssl",
-            "cts-gencert = cts.manage:generatelocalhostcert",
-            "cts-manager = cts.manage:manager_wrapper",
-            "cts-upgradedb = cts.manage:upgradedb",
+            "cts-manager = cts.manage:cli",
         ],
     },
     data_files=[

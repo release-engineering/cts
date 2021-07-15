@@ -30,7 +30,6 @@ RUN cd /etc/yum.repos.d/ \
         python3-psycopg2 \
         python3-psutil \
         python3-ldap \
-        python3-flask-script \
         python3-flask-login \
         python3-prometheus_client \
     && dnf -v -y install net-tools iproute iputils traceroute \
