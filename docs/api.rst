@@ -206,7 +206,8 @@ Compose tag has been added to the Compose. Message body:
     {
         'event': 'compose-tagged',
         'tag': 'some_tag',
-        'compose': COMPOSE_JSON
+        'compose': COMPOSE_JSON,
+        'agent': 'username'
     }
 
 Topic: cts.compose-untagged
@@ -219,7 +220,8 @@ Compose tag has been removed from the Compose. Message body:
     {
         'event': 'compose-untagged',
         'tag': 'some_tag',
-        'compose': COMPOSE_JSON
+        'compose': COMPOSE_JSON,
+        'agent': 'username'
     }
 
     

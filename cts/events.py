@@ -23,7 +23,7 @@
 
 
 from threading import Lock
-
+import flask
 from logging import getLogger
 from sqlalchemy.orm import attributes
 
@@ -64,6 +64,10 @@ def cache_composes_if_state_changed(session, flush_context):
                 "event": event,
                 "compose": comp.json(),
             }
+            if flask.g.user:
+                extra_args["agent"] = flask.g.user.username
+            else:
+                extra_args["agent"] = None
             msg.update(extra_args)
             _cached_composes[comp.id].append(msg)
 

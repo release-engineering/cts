@@ -22,11 +22,11 @@
 
 import json
 import unittest
-
-from mock import patch, ANY, call
+import flask
+from mock import patch, ANY, call, Mock
 
 from cts import conf
-from cts import db
+from cts import app, db
 from cts.models import Compose, User, Tag
 from utils import ModelsBaseTest
 
@@ -152,40 +152,83 @@ class TestMessaging(ModelsBaseTest):
         )
 
     def test_message_compose_create(self, publish):
-        compose = Compose.create(db.session, "odcs", self.ci)[0]
-        db.session.commit()
+        with app.app_context():
+            flask.g.user = Mock(username="odcs")
+            compose = Compose.create(db.session, "odcs", self.ci)[0]
+            db.session.commit()
 
-        publish.assert_called_once_with(
-            [{"event": "compose-created", "compose": compose.json()}]
-        )
+            publish.assert_called_once_with(
+                [
+                    {
+                        "event": "compose-created",
+                        "agent": "odcs",
+                        "compose": compose.json(),
+                    }
+                ]
+            )
 
     def test_message_compose_tag(self, publish):
-        self.compose.tag("odcs", "periodic")
-        self.compose.tag("odcs", "nightly")
-        db.session.commit()
+        with app.app_context():
+            flask.g.user = Mock(username="odcs")
+            self.compose.tag("odcs", "periodic")
+            self.compose.tag("odcs", "nightly")
+            db.session.commit()
 
         expected_call = call(
-            [{"event": "compose-tagged", "tag": "periodic", "compose": ANY}]
+            [
+                {
+                    "event": "compose-tagged",
+                    "tag": "periodic",
+                    "compose": ANY,
+                    "agent": "odcs",
+                }
+            ]
         )
         self.assertEqual(publish.mock_calls[0], expected_call)
 
         expected_call = call(
-            [{"event": "compose-tagged", "tag": "nightly", "compose": ANY}]
+            [
+                {
+                    "event": "compose-tagged",
+                    "tag": "nightly",
+                    "compose": ANY,
+                    "agent": "odcs",
+                }
+            ]
         )
         self.assertEqual(publish.mock_calls[1], expected_call)
 
     def test_message_compose_untag(self, publish):
-        self.test_message_compose_tag()
-        self.compose.untag("odcs", "periodic")
-        self.compose.untag("odcs", "nightly")
-        db.session.commit()
+        with app.app_context():
+            flask.g.user = Mock(username="odcs")
+            self.compose.tag("odcs", "periodic")
+            self.compose.tag("odcs", "nightly")
+            db.session.commit()
+
+            self.compose.untag("odcs", "periodic")
+            self.compose.untag("odcs", "nightly")
+            db.session.commit()
 
         expected_call = call(
-            [{"event": "compose-untagged", "tag": "periodic", "compose": ANY}]
+            [
+                {
+                    "event": "compose-untagged",
+                    "tag": "periodic",
+                    "compose": ANY,
+                    "agent": "odcs",
+                }
+            ]
         )
-        self.assertEqual(publish.mock_calls[0], expected_call)
+        self.assertEqual(publish.mock_calls[2], expected_call)
 
         expected_call = call(
-            [{"event": "compose-untagged", "tag": "nightly", "compose": ANY}]
+            [
+                {
+                    "event": "compose-untagged",
+                    "tag": "nightly",
+                    "compose": ANY,
+                    "agent": "odcs",
+                }
+            ]
         )
-        self.assertEqual(publish.mock_calls[1], expected_call)
+        self.assertEqual(publish.mock_calls[3], expected_call)
