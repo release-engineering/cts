@@ -498,7 +498,7 @@ class RepoAPI(MethodView):
         if not compose.compose_url:
             raise NotFound("Compose does not have any URL set")
 
-        baseurl = os.path.join(compose.compose_url, "compose", variant, "$basearch/os")
+        baseurl = os.path.join(compose.compose_url, "compose", variant, "$basearch/os/")
         content = """[{compose.id}-{variant}]
 name=Compose {compose.id} (RPMs) - {variant}
 baseurl={baseurl}

@@ -979,7 +979,7 @@ class TestViewsComposeRepo(ViewBaseTest):
             data = rv.get_data(as_text=True)
         expected_data = """[Fedora-Rawhide-20200517.n.1-AppStream]
 name=Compose Fedora-Rawhide-20200517.n.1 (RPMs) - AppStream
-baseurl=http://localhost/composes/Fedora-Rawhide-20200517.n.1/compose/AppStream/$basearch/os
+baseurl=http://localhost/composes/Fedora-Rawhide-20200517.n.1/compose/AppStream/$basearch/os/
 enabled=1
 gpgcheck=0
 """
