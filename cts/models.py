@@ -634,3 +634,34 @@ class Compose(CTSBase):
             .order_by(ComposeChange.id)
             .all()
         )
+
+    def retag_stale_composes(self, logged_user, timeout, user_data=None):
+        """
+        Find and retag the composes with -requested tag and retag if the timeout occurs.
+
+        :param str logged_user: Username of the logged user.
+        :param int timeout: Timeout value in hours for retagging.
+        :param str user_data: User data to add to ComposeChange record.
+        :return Generator: The tag information that is retagged.
+        """
+        for tag in self.tags[:]:
+            if "requested" in tag.name:
+                # Get the latest requested tag info
+                last_change = (
+                    ComposeChange.query.filter(
+                        ComposeChange.compose_id == self.id,
+                        ComposeChange.action == "tagged",
+                        ComposeChange.message.contains('"' + tag.name + '"'),
+                    )
+                    .order_by(ComposeChange.time.desc())
+                    .first()
+                )
+                if datetime.utcnow() - last_change.time > timeout:
+                    # Untag compose
+                    self.untag(logged_user, tag.name, user_data)
+                    db.session.commit()
+
+                    # Tag compose again with -requested
+                    self.tag(logged_user, tag.name, user_data)
+                    db.session.commit()
+                yield tag

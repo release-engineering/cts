@@ -150,6 +150,27 @@ class TestMessaging(ModelsBaseTest):
             description="Nightly compose",
             documentation="http://localhost/",
         )
+        Tag.create(
+            db.session,
+            "me",
+            name="nightly-requested",
+            description="Nightly-requested compose",
+            documentation="http://localhost/",
+        )
+        Tag.create(
+            db.session,
+            "me",
+            name="candidate-requested",
+            description="Candidate-requested compose",
+            documentation="http://localhost/",
+        )
+        Tag.create(
+            db.session,
+            "me",
+            name="development-nightly-requested",
+            description="Development nightly requsted compose",
+            documentation="http://localhost/",
+        )
 
     def test_message_compose_create(self, publish):
         with app.app_context():
@@ -232,3 +253,75 @@ class TestMessaging(ModelsBaseTest):
             ]
         )
         self.assertEqual(publish.mock_calls[3], expected_call)
+
+    def test_retag_stale_composes(self, publish):
+        import datetime
+        from freezegun import freeze_time
+
+        freezer = freeze_time("2021-01-01 00:00:00")
+        with app.app_context():
+            flask.g.user = Mock(username="odcs")
+            freezer.start()
+            self.compose.tag("odcs", "nightly-requested")
+            self.compose.tag("odcs", "candidate-requested")
+            self.compose.tag("odcs", "nightly")
+            freezer.stop()
+
+            # Retag only the -requested tags when 1 hour timeout occurs
+            timeout = datetime.timedelta(hours=1)
+            self.compose.tag("odcs", "development-nightly-requested")
+            db.session.commit()
+            retags = [x for x in self.compose.retag_stale_composes("odcs", timeout)]
+
+        # There should be 3 retagging check for all requested tag, nightly-requested, candidate-requested, development-nightly-requested
+        self.assertEqual(len(retags), 3)
+
+        expected_call = call(
+            [
+                {
+                    "event": "compose-untagged",
+                    "tag": "nightly-requested",
+                    "compose": ANY,
+                    "agent": "odcs",
+                }
+            ]
+        )
+        self.assertEqual(publish.mock_calls[4], expected_call)
+
+        expected_call = call(
+            [
+                {
+                    "event": "compose-tagged",
+                    "tag": "nightly-requested",
+                    "compose": ANY,
+                    "agent": "odcs",
+                }
+            ]
+        )
+        self.assertEqual(publish.mock_calls[5], expected_call)
+
+        expected_call = call(
+            [
+                {
+                    "event": "compose-untagged",
+                    "tag": "candidate-requested",
+                    "compose": ANY,
+                    "agent": "odcs",
+                }
+            ]
+        )
+        self.assertEqual(publish.mock_calls[6], expected_call)
+
+        expected_call = call(
+            [
+                {
+                    "event": "compose-tagged",
+                    "tag": "candidate-requested",
+                    "compose": ANY,
+                    "agent": "odcs",
+                }
+            ]
+        )
+        self.assertEqual(publish.mock_calls[7], expected_call)
+        # There should be 8 mock calls, since timeout is not occured for development-nightly-requested compose and nightly compose is not retagged
+        self.assertEqual(len(publish.mock_calls), 8)

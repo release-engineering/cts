@@ -19,7 +19,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 import logging
 import os
 import ssl
@@ -129,36 +129,32 @@ def check_stale_requests(timeout):
 
     from flask import g
 
-    timeout_h = timedelta(hours=timeout)
-    logging.info(
-        "Checking stale composes with requested tag within {} hours".format(timeout)
-    )
-    # Get the composes with -requested tag
-    query = models.Compose.query.outerjoin(models.Compose.tags, aliased=True)
-    composes = query.filter(models.Tag.name.contains("requested")).all()
-
-    system_user = models.User.find_user_by_name(username="SYSTEM")
-    if not system_user:
-        system_user = models.User.create_user(username="SYSTEM")
-        logging.info("New SYSTEM User is created in database.")
-        db.session.commit()
-    g.user = system_user
-    for compose in composes:
-        # Get the last tagged time of the compose
-        last_change = models.ComposeChange.query.filter_by(
-            compose_id=compose.id, action="tagged"
-        ).all()[-1]
-        if datetime.utcnow() - last_change.time > timeout_h:
-            tag_name = last_change.message.split()[3][1:-1]
-            # Untag compose
-            compose.untag(g.user.username, tag_name)
+    try:
+        timeout_h = timedelta(hours=timeout)
+        logging.info(
+            "Checking stale composes with requested tag within {} hours".format(timeout)
+        )
+        # Get the composes with -requested tag
+        query = models.Compose.query.outerjoin(models.Compose.tags, aliased=True)
+        composes = query.filter(models.Tag.name.contains("requested")).all()
+        system_user = models.User.find_user_by_name(username="SYSTEM")
+        if not system_user:
+            system_user = models.User.create_user(username="SYSTEM")
+            logging.info("New SYSTEM User is created in database.")
             db.session.commit()
-            logging.info("Compose:{} is succesfully untagged".format(compose.id))
+        g.user = system_user
+        for compose in composes:
+            for retag in compose.retag_stale_composes(g.user.username, timeout_h):
+                logging.info(
+                    "Checking compose:{} for tag {} is done".format(
+                        compose.id, retag.name
+                    )
+                )
+        logging.info("Checking for stale requests is done")
 
-            # Tag compose again with -requested
-            compose.tag(g.user.username, tag_name)
-            db.session.commit()
-            logging.info("Compose:{} is tagged as {}".format(compose.id, tag_name))
+    except BaseException as e:
+        logging.error("Error occured while retagging compose:{}".format(compose.id))
+        raise e
 
 
 if __name__ == "__main__":

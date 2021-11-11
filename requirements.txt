@@ -8,3 +8,4 @@ requests
 productmd
 python-ldap
 prometheus_client
+freezegun
