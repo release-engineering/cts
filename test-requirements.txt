@@ -9,3 +9,4 @@ mock
 # https://github.com/pallets/itsdangerous/issues/102
 # Let's update this package to avoid this problem.
 itsdangerous>=1.1.0
+freezegun
