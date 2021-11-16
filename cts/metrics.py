@@ -25,11 +25,14 @@
 import os
 import tempfile
 
+from prometheus_client.core import GaugeMetricFamily
 from prometheus_client import (  # noqa: F401
     ProcessCollector,
     CollectorRegistry,
     multiprocess,
 )
+
+from cts import db
 
 
 # This environment variable should be set if deployment uses multiple
@@ -41,3 +44,30 @@ if not os.environ.get("prometheus_multiproc_dir"):
 registry = CollectorRegistry()
 ProcessCollector(registry=registry)
 multiprocess.MultiProcessCollector(registry)
+
+
+class ComposesCollector(object):
+    def composes_total(self):
+        """
+        Returns `composes_total` GaugeMetricFamily with number of composes
+        for each tag.
+        """
+        counter = GaugeMetricFamily(
+            "composes_total",
+            "Number of tagged composes",
+            labels=["tag"],
+        )
+        rs = db.session.execute(
+            "SELECT COUNT(composes.id), tags.name FROM composes JOIN (tags_to_composes JOIN tags ON tags.id = tags_to_composes.tag_id) ON composes.id = tags_to_composes.compose_id GROUP BY tags.name"
+        ).fetchall()
+        for tag in rs:
+            # First element is the number of occurence of tag
+            # Second element is the tag name
+            counter.add_metric([tag[1]], tag[0])
+        return counter
+
+    def collect(self):
+        yield self.composes_total()
+
+
+registry.register(ComposesCollector())

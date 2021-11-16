@@ -130,6 +130,24 @@ class TestOpenIDCLogin(ViewBaseTest):
         self.assertEqual(rv.status, "401 UNAUTHORIZED")
 
 
+class TestMetricsView(ViewBaseTest):
+    def setup_test_data(self):
+        # Create a compose and a tag.
+        User.create_user(username="odcs")
+        self.c = Compose.create(db.session, "odcs", self.ci)[0]
+        Tag.create(
+            db.session, "odcs", name="test", description="test", documentation="test"
+        )
+
+    def test_metrics(self):
+        self.c.tag("odcs", "test")
+        db.session.commit()
+        rv = self.client.get("/api/1/metrics/")
+        data = rv.get_data(as_text=True)
+        expected_data = 'composes_total{tag="test"} 1.0'
+        self.assertTrue(expected_data in data)
+
+
 class TestViews(ViewBaseTest):
     maxDiff = None
 
