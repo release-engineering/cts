@@ -136,13 +136,22 @@ def load_krb_or_ssl_user_from_request(request):
 
 
 def query_ldap_groups(uid):
+    """Query user's ldap groups.
+
+    :param str uid: username.
+    """
+
     client = ldap.initialize(conf.auth_ldap_server)
-    groups = client.search_s(
-        conf.auth_ldap_group_base,
-        ldap.SCOPE_ONELEVEL,
-        attrlist=["cn", "gidNumber"],
-        filterstr="memberUid={0}".format(uid),
-    )
+    groups = []
+    for ldap_base, ldap_filter in conf.auth_ldap_groups:
+        groups.extend(
+            client.search_s(
+                ldap_base,
+                ldap.SCOPE_ONELEVEL,
+                attrlist=["cn"],
+                filterstr=ldap_filter.format(uid),
+            )
+        )
 
     group_names = list(chain(*[info["cn"] for _, info in groups]))
     return group_names

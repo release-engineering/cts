@@ -134,10 +134,10 @@ class Config(object):
             "default": "",
             "desc": "Server URL to query user's groups.",
         },
-        "auth_ldap_group_base": {
-            "type": str,
-            "default": "",
-            "desc": "Group base to query user's groups from LDAP server.",
+        "auth_ldap_groups": {
+            "type": list,
+            "default": [],
+            "desc": "List of pairs (search base, filter pattern) to query user's groups from LDAP server.",
         },
         "messaging_backend": {
             "type": str,

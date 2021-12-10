@@ -30,9 +30,13 @@ class BaseConfiguration(object):
     # For example: ldap://ldap.example.com/
     AUTH_LDAP_SERVER = ""
 
-    # Group base to query groups from LDAP server.
-    # Generally, it would be, for example, ou=groups,dc=example,dc=com
-    AUTH_LDAP_GROUP_BASE = ""
+    # List of (base, filter) pairs to query groups from LDAP server.
+    # CTS can query groups from multi base with different filter, for example:
+    # AUTH_LDAP_GROUPS = [
+    #     ("ou=groups,dc=example,dc=com", "memberUid={}"),
+    #     ("ou=adhoc,ou=managedGroups,dc=example,dc=com", "uniqueMember=uid={},ou=users,dc=example,dc=com")
+    # ]
+    AUTH_LDAP_GROUPS = []
 
     AUTH_OPENIDC_USERINFO_URI = "https://id.fedoraproject.org/openidc/UserInfo"
 

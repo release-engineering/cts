@@ -334,25 +334,40 @@ class TestLoadOpenIDCUserFromRequest(ModelsBaseTest):
 class TestQueryLdapGroups(unittest.TestCase):
     """Test auth.query_ldap_groups"""
 
+    @patch.object(
+        conf,
+        "auth_ldap_groups",
+        new=[
+            ("ou=Groups,dc=example,dc=com", "memberUid={}"),
+            (
+                "ou=adhoc,ou=managedGroups,dc=example,dc=com",
+                "uniqueMember=uid={},ou=users,dc=example,dc=com",
+            ),
+        ],
+    )
     @patch("cts.auth.ldap.initialize")
     def test_get_groups(self, initialize):
-        initialize.return_value.search_s.return_value = [
-            (
-                "cn=ctsdev,ou=Groups,dc=example,dc=com",
-                {"gidNumber": ["5523"], "cn": ["ctsdev"]},
-            ),
-            (
-                "cn=freshmakerdev,ou=Groups,dc=example,dc=com",
-                {"gidNumber": ["17861"], "cn": ["freshmakerdev"]},
-            ),
-            (
-                "cn=devel,ou=Groups,dc=example,dc=com",
-                {"gidNumber": ["5781"], "cn": ["devel"]},
-            ),
+        initialize.return_value.search_s.side_effect = [
+            [
+                (
+                    "cn=ctsdev,ou=Groups,dc=example,dc=com",
+                    {"cn": ["ctsdev"]},
+                ),
+                (
+                    "cn=devel,ou=Groups,dc=example,dc=com",
+                    {"cn": ["devel"]},
+                ),
+            ],
+            [
+                (
+                    "cn=ctsadmin,ou=adhoc,ou=managedGroups,dc=example,dc=com",
+                    {"cn": ["ctsadmin"]},
+                )
+            ],
         ]
 
         groups = query_ldap_groups("me")
-        self.assertEqual(sorted(["ctsdev", "freshmakerdev", "devel"]), sorted(groups))
+        self.assertEqual(sorted(["ctsdev", "devel", "ctsadmin"]), sorted(groups))
 
 
 class TestInitAuth(unittest.TestCase):
