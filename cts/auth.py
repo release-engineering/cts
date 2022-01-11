@@ -50,10 +50,10 @@ def _validate_kerberos_config():
             "check AUTH_LDAP_SERVER in your config."
         )
 
-    if not conf.auth_ldap_group_base:
+    if not conf.auth_ldap_groups:
         errors.append(
             "kerberos authentication enabled with no LDAP group base configured, "
-            "check AUTH_LDAP_GROUP_BASE in your config."
+            "check AUTH_LDAP_GROUPS in your config."
         )
 
     if errors:

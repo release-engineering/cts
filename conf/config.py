@@ -96,7 +96,7 @@ class TestConfiguration(BaseConfiguration):
 
     AUTH_BACKEND = "noauth"
     AUTH_LDAP_SERVER = "ldap://ldap.example.com"
-    AUTH_LDAP_GROUP_BASE = "ou=groups,dc=example,dc=com"
+    AUTH_LDAP_GROUPS = [("ou=groups,dc=example,dc=com", "memberUid={}")]
     MESSAGING_BACKEND = "rhmsg"
 
 

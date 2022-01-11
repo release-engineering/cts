@@ -412,7 +412,7 @@ class TestInitAuth(unittest.TestCase):
             self.assertRaises(ValueError, init_auth, self.login_manager, "kerberos")
 
     def test_init_auths_no_ldap_group_base(self):
-        with patch.object(cts.auth.conf, "auth_ldap_group_base", ""):
+        with patch.object(cts.auth.conf, "auth_ldap_groups", ""):
             self.assertRaises(ValueError, init_auth, self.login_manager, "kerberos")
 
 
