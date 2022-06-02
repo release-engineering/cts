@@ -8,3 +8,4 @@ requests
 productmd
 python-ldap
 prometheus_client
+Werkzeug <= 2.0.3  # Newer version removed a func needed by Flask-Login
