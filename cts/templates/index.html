@@ -1,14 +1,95 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
-    <title>Compose Tracking Service (CTS)</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>Compose Tracking Service</title>
+    <style>
+      .center {
+        margin: auto;
+        text-align: center;
+        padding: 200px 0;
+      }
+
+      h1 {
+        font-family: "Red Hat Display";
+        font-size: 40px;
+        margin: 24px 0px;
+      }
+
+      p {
+        font-family: "Red Hat Text";
+        font-size: 20px;
+      }
+
+      .button {
+        display: inline-block;
+        margin: 24px 0px 0px 0px; /*top, right, bottom, and left*/
+
+        border-radius: 8px;
+
+        padding: 16px 32px;
+        cursor: pointer;
+      }
+
+      .btn-text {
+        font-family: "Red Hat Text";
+        font-size: 16px;
+        font-weight: 700;
+        text-align: center;
+        text-decoration: none;
+      }
+
+      .button:hover {
+        transition: 0.3s cubic-bezier(0.5, 0, 0.5, 1);
+      }
+
+      .button.primary {
+        background-color: #0066cc;
+        color: white;
+
+        border: 1px solid #0066cc;
+      }
+
+      .button.primary:hover {
+        background-color: #004d99;
+      }
+
+      .button.secondary {
+        background-color: white;
+        color: #0066cc;
+
+        border-color: #0066cc;
+        border: 1px solid #0066cc;
+
+        margin-left: 24px;
+      }
+
+      .button.secondary:hover {
+        background-color: #0066cc;
+        color: white;
+      }
+    </style>
   </head>
   <body>
-    <h1>Compose Tracking Service (CTS)</h1>
-    <ul>
-      <li>Documents <a href="https://pagure.io/docs/cts/">https://pagure.io/docs/cts/</a></li>
-      <li>Source code <a href="https://pagure.io/cts">https://pagure.io/cts</a></li>
-    <ul>
+    <div class="center">
+      <h1>Compose Tracking Service</h1>
+      <p>
+        Compose Tracking Service (CTS)<br />
+        is a small service storing specific metadata <br />about each Pungi
+        Compose.
+      </p>
+      <a
+        class="button btn-text primary"
+        href="https://pagure.io/cts"
+        target="_blank"
+        >Open repo</a
+      >
+      <a
+        class="button btn-text secondary"
+        href="https://pagure.io/docs/cts/"
+        target="_blank"
+        >Read docs</a
+      >
+    </div>
   </body>
 </html>
