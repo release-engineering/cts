@@ -300,7 +300,7 @@ class AboutAPI(MethodView):
         :statuscode 200: Compose updated and returned.
         """
         json = {"version": version}
-        config_items = ["auth_backend"]
+        config_items = ["auth_backend", "allowed_builders"]
         for item in config_items:
             config_item = getattr(conf, item)
             # All config items have a default, so if doesn't exist it is
