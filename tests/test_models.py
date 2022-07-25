@@ -179,8 +179,9 @@ class TestTagModel(ModelsBaseTest):
 
         # Add non-existing.
         r = t.add_tagger("admin", "non-existing")
-        self.assertEqual(r, False)
-        self.assertEqual(t.taggers, [self.you])
+        self.assertEqual(r, True)
+        n = User.find_user_by_name("non-existing")
+        self.assertEqual(t.taggers, [self.you, n])
 
         expected_tag_changes = [
             {
@@ -218,6 +219,13 @@ class TestTagModel(ModelsBaseTest):
                 "user_data": "Ticket #123",
                 "time": ANY,
             },
+            {
+                "action": "add_tagger",
+                "message": 'Tagger permission granted to user "non-existing".',
+                "user": "admin",
+                "user_data": None,
+                "time": ANY,
+            },
         ]
         tag_changes = [change.json() for change in t.changes()]
         self.assertEqual(tag_changes, expected_tag_changes)
@@ -247,8 +255,9 @@ class TestTagModel(ModelsBaseTest):
 
         # Add non-existing.
         r = t.add_untagger("admin", "non-existing")
-        self.assertEqual(r, False)
-        self.assertEqual(t.untaggers, [self.you])
+        self.assertEqual(r, True)
+        n = User.find_user_by_name("non-existing")
+        self.assertEqual(t.untaggers, [self.you, n])
 
     def test_json(self):
         expected_json = {
@@ -329,6 +338,13 @@ class TestUserModel(ModelsBaseTest):
 
         user = User.find_user_by_name("tester2")
         self.assertEqual("tester2", user.username)
+
+    def test_get_or_create(self):
+        user = User.find_user_by_name("tester3")
+        self.assertIsNone(user)
+
+        user = User.get_or_create("tester3")
+        self.assertEqual("tester3", user.username)
 
     def test_no_group_is_added_if_no_groups(self):
         User.create_user(username="tester1")

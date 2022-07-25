@@ -671,10 +671,16 @@ class TestViews(ViewBaseTest):
             rv = self.client.patch("/api/1/tags/1", json=req)
             data = json.loads(rv.get_data(as_text=True))
 
-        self.assertEqual(rv.status, "400 BAD REQUEST")
-        self.assertEqual(data["error"], "Bad Request")
-        self.assertEqual(data["status"], 400)
-        self.assertTrue("User does not exist" in data["message"])
+        self.assertEqual(rv.status, "200 OK")
+        expected_data = {
+            "description": "Periodic compose",
+            "documentation": "Foo",
+            "id": 1,
+            "name": "periodic",
+            "taggers": ["not-existing"],
+            "untaggers": [],
+        }
+        self.assertEqual(data, expected_data)
 
     def test_tags_patch_actions_unknown_action(self):
         self.test_tags_post()

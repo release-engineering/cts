@@ -102,6 +102,20 @@ class User(CTSBase, UserMixin):
         db.session.add(user)
         return user
 
+    @classmethod
+    def get_or_create(cls, username):
+        """Look up user with given username, creating one if not exist.
+
+        :param str username: a string of username to find/create user.
+        :return: user object.
+        :rtype: User
+        """
+        user = cls.find_user_by_name(username)
+        if user:
+            return user
+        else:
+            return cls.create_user(username)
+
 
 composes_to_composes = db.Table(
     "composes_to_composes",
@@ -227,9 +241,7 @@ class Tag(CTSBase):
         :param str user_data: User data to add to TagChange record.
         :return bool: True if permissions granted, False if user does not exist.
         """
-        u = User.find_user_by_name(username)
-        if not u:
-            return False
+        u = User.get_or_create(username)
 
         TagChange.create(
             db.session,
@@ -282,9 +294,7 @@ class Tag(CTSBase):
         :param str user_data: User data to add to TagChange record.
         :return bool: True if permissions granted, False if user does not exist.
         """
-        u = User.find_user_by_name(username)
-        if not u:
-            return False
+        u = User.get_or_create(username)
 
         TagChange.create(
             db.session,
