@@ -166,7 +166,14 @@ class TestViews(ViewBaseTest):
     def test_about_get(self):
         rv = self.client.get("/api/1/about/")
         data = json.loads(rv.get_data(as_text=True))
-        self.assertEqual(data, {"version": version, "auth_backend": "noauth"})
+        self.assertEqual(
+            data,
+            {
+                "version": version,
+                "auth_backend": "noauth",
+                "allowed_builders": conf.allowed_builders,
+            },
+        )
 
     def test_composes_post_invalid_json(self):
         with self.test_request_context(user="odcs"):
