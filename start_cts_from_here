@@ -3,4 +3,4 @@
 export PYTHONPATH=.
 export CTS_DEVELOPER_ENV=1
 
-python cts/manage.py runssl
+python3 cts/manage.py runssl
