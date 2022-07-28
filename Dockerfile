@@ -30,6 +30,7 @@ RUN dnf -y update && dnf -v -y install \
         python3-flask-migrate \
         python3-flask-sqlalchemy \
         python3-ldap \
+        python3-marshmallow \
         python3-mod_wsgi \
         python3-openidc-client \
         python3-pip \
@@ -38,6 +39,7 @@ RUN dnf -y update && dnf -v -y install \
         python3-psutil \
         python3-psycopg2 \
         python3-pyOpenSSL \
+        python3-pyyaml \
         python3-sqlalchemy \
         python3-systemd \
         systemd \
@@ -45,19 +47,24 @@ RUN dnf -y update && dnf -v -y install \
     && dnf -y clean all \
     && rm -f /tmp/*
 
+RUN chmod 755 /var/log/httpd
+
 RUN if [ "$cacert_url" != "undefined" ]; then \
         cd /etc/pki/ca-trust/source/anchors \
         && curl -O --insecure $cacert_url \
         && update-ca-trust extract; \
     fi
 
-RUN chmod 755 /var/log/httpd
-
 COPY --from=builder /src .
 
 RUN mkdir -p /usr/share/cts && cp contrib/cts.wsgi /usr/share/cts/
 
+# Install dependencies not available in fedora
+RUN pip3 install --trusted-host pypi.org -r requirements.txt
+
 RUN pip3 install --trusted-host pypi.org --no-deps -e .
+
+RUN mkdir cts/static/ && CTS_DEVELOPER_ENV=1 cts-manager openapispec > cts/static/openapispec.json
 
 EXPOSE 5005
 

@@ -157,5 +157,13 @@ def check_stale_requests(timeout):
         raise e
 
 
+@cli.command()
+def openapispec():
+    """Dump OpenAPI specification"""
+    import json
+
+    print(json.dumps(app.openapispec.to_dict(), indent=2))
+
+
 if __name__ == "__main__":
     cli()
