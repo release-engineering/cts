@@ -1037,3 +1037,33 @@ gpgcheck=0
         self.assertEqual(data["error"], "Bad Request")
         self.assertEqual(data["status"], 400)
         self.assertEqual(data["message"], "variant is required.")
+
+
+class TestViewsComposeChanges(ViewBaseTest):
+    maxDiff = None
+
+    def setup_composes(self):
+        User.create_user(username="odcs")
+        self.c = Compose.create(db.session, "odcs", self.ci)[0]
+        self.c.compose_url = "http://localhost/composes/Fedora-Rawhide-20200517.n.1"
+        db.session.commit()
+
+    def test_initial_change(self):
+        with self.test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/composes/Fedora-Rawhide-20200517.n.1/changes/")
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "200 OK")
+        self.assertEqual(len(data["changes"]), 1)
+        self.assertEqual(data["changes"], [c.json() for c in self.c.changes])
+
+    def test_changes_with_addtag(self):
+        Tag.create(
+            db.session, "odcs", name="test", description="test", documentation="test"
+        )
+        self.c.tag("odcs", "test")
+        with self.test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/composes/Fedora-Rawhide-20200517.n.1/changes/")
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "200 OK")
+        self.assertEqual(len(data["changes"]), 2)
+        self.assertEqual(data["changes"], [c.json() for c in self.c.changes])

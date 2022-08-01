@@ -128,6 +128,20 @@ class ComposeListSchema(Schema):
     meta = fields.Nested(MetaSchema)
 
 
+class ChangeSchema(Schema):
+    action = fields.String()
+    message = fields.String()
+    time = fields.DateTime()
+    user = fields.String()
+    user_data = fields.String()
+
+
+class ComposeChangesSchema(Schema):
+    """Schema for ComposeChangesAPI response."""
+
+    changes = fields.List(fields.Nested(ChangeSchema))
+
+
 class TagSchema(Schema):
     """Schema for TagDetailAPI response."""
 
@@ -144,6 +158,12 @@ class TagListSchema(Schema):
 
     items = fields.List(fields.Nested(TagSchema))
     meta = fields.Nested(MetaSchema)
+
+
+class TagChangesSchema(Schema):
+    """Schema for TagChangesAPI response."""
+
+    changes = fields.List(fields.Nested(ChangeSchema))
 
 
 class HTTPErrorSchema(Schema):
@@ -581,6 +601,39 @@ class ComposeDetailAPI(MethodView):
         return jsonify(compose.json()), 200
 
 
+class ComposeChangesAPI(MethodView):
+    def get(self, id):
+        """Returns compose change history.
+
+        ---
+        summary: Get compose changes
+        description: Get compose changes
+        parameters:
+          - name: id
+            in: path
+            schema:
+              type: string
+            required: true
+            description: Compose ID
+        responses:
+          200:
+            description: Compose changes are returned.
+            content:
+              application/json:
+                schema: ComposeChangesSchema
+          404:
+            description: Compose not found.
+            content:
+              application/json:
+                schema: HTTPErrorSchema
+        """
+        compose = Compose.query.filter_by(id=id).first()
+        if not compose:
+            raise NotFound("No such compose found.")
+
+        return jsonify({"changes": [c.json() for c in compose.changes]}), 200
+
+
 class AboutAPI(MethodView):
     def get(self):
         """Return information about this CTS instance in JSON format.
@@ -924,6 +977,42 @@ class TagDetailAPI(MethodView):
         return jsonify(t.json()), 200
 
 
+class TagChangesAPI(MethodView):
+    def get(self, id):
+        """Returns tag change history.
+
+        ---
+        summary: Get tag changes
+        description: Get tag changes
+        parameters:
+          - name: id
+            in: path
+            schema:
+              type: integer or string
+            required: true
+            description: Numeric tag id or string of tag name
+        responses:
+          200:
+            description: Tag changes are returned.
+            content:
+              application/json:
+                schema: TagChangesSchema
+          404:
+            description: Tag not found.
+            content:
+              application/json:
+                schema: HTTPErrorSchema
+        """
+        if id.isdigit():
+            tag = Tag.query.filter_by(id=id).first()
+        else:
+            tag = Tag.query.filter_by(name=id).first()
+        if not tag:
+            raise NotFound("No such tag found.")
+
+        return jsonify({"changes": [c.json() for c in tag.changes]}), 200
+
+
 class RepoAPI(MethodView):
     def get(self, id):
         """Returns content of repofile.
@@ -1007,6 +1096,13 @@ def register_api_v1():
             },
             "view_class": ComposeDetailAPI,
         },
+        "composechanges": {
+            "url": "/api/1/composes/<id>/changes/",
+            "options": {
+                "methods": ["GET"],
+            },
+            "view_class": ComposeChangesAPI,
+        },
         "tags": {
             "url": "/api/1/tags/",
             "options": {
@@ -1020,6 +1116,13 @@ def register_api_v1():
                 "methods": ["GET", "PATCH"],
             },
             "view_class": TagDetailAPI,
+        },
+        "tagchanges": {
+            "url": "/api/1/tags/<id>/changes/",
+            "options": {
+                "methods": ["GET"],
+            },
+            "view_class": TagChangesAPI,
         },
         "repo": {
             "url": "/api/1/composes/<id>/repo/",

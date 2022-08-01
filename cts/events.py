@@ -51,10 +51,16 @@ def cache_composes_if_state_changed(session, flush_context):
                 event = "compose-tagged"
                 # We change only single tag in the same time.
                 extra_args["tag"] = attributes.get_history(comp, "tags").added[0].name
+                extra_args["user_data"] = (
+                    attributes.get_history(comp, "changes").added[0].user_data
+                )
             elif attributes.get_history(comp, "tags").deleted:
                 event = "compose-untagged"
                 # We change only single tag in the same time.
                 extra_args["tag"] = attributes.get_history(comp, "tags").deleted[0].name
+                extra_args["user_data"] = (
+                    attributes.get_history(comp, "changes").added[0].user_data
+                )
             else:
                 event = "compose-changed"
 

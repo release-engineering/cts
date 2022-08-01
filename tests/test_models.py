@@ -231,7 +231,7 @@ class TestTagModel(ModelsBaseTest):
                 "time": ANY,
             },
         ]
-        tag_changes = [change.json() for change in t.changes()]
+        tag_changes = [change.json() for change in t.changes]
         self.assertEqual(tag_changes, expected_tag_changes)
 
     def test_add_remove_untagger(self):
@@ -323,7 +323,7 @@ class TestTagModel(ModelsBaseTest):
                 "user_data": None,
             },
         ]
-        compose_changes = [change.json() for change in self.compose.changes()]
+        compose_changes = [change.json() for change in self.compose.changes]
         self.assertEqual(compose_changes, expected_compose_changes)
 
 

@@ -209,6 +209,8 @@ class Tag(CTSBase):
     # Users allowed to untag the compose with this tag.
     untaggers = db.relationship("User", secondary=untaggers)
 
+    changes = db.relationship("TagChange")
+
     @classmethod
     def create(cls, session, logged_user, user_data=None, **kwargs):
         tag = cls(**kwargs)
@@ -338,14 +340,6 @@ class Tag(CTSBase):
 
         return True
 
-    def changes(self):
-        return (
-            db.session.query(TagChange)
-            .filter_by(tag_id=self.id)
-            .order_by(TagChange.id)
-            .all()
-        )
-
     def json(self):
         return {
             "id": self.id,
@@ -447,6 +441,8 @@ class Compose(CTSBase):
 
     # Current URL to the top level directory of this compose
     compose_url = db.Column(db.String, nullable=True)
+
+    changes = db.relationship("ComposeChange")
 
     @classmethod
     def create(
@@ -597,14 +593,16 @@ class Compose(CTSBase):
             # Tag is already added.
             return True
 
-        ComposeChange.create(
-            db.session,
-            self,
-            logged_user,
+        user = User.find_user_by_name(logged_user)
+        change = ComposeChange(
+            time=datetime.utcnow(),
+            compose_id=self.id,
+            user_id=user.id,
             action="tagged",
             user_data=user_data,
             message='User "%s" added "%s" tag.' % (logged_user, tag_name),
         )
+        self.changes.append(change)
         self.tags.append(t)
         return True
 
@@ -621,29 +619,22 @@ class Compose(CTSBase):
         if not t:
             return False
 
-        try:
-            self.tags.remove(t)
-        except ValueError:
+        if t not in self.tags:
             # Tag is not there, so return True.
             return True
 
-        ComposeChange.create(
-            db.session,
-            self,
-            logged_user,
+        user = User.find_user_by_name(logged_user)
+        change = ComposeChange(
+            time=datetime.utcnow(),
+            compose_id=self.id,
+            user_id=user.id,
             action="untagged",
             user_data=user_data,
             message='User "%s" removed "%s" tag.' % (logged_user, tag_name),
         )
+        self.changes.append(change)
+        self.tags.remove(t)
         return True
-
-    def changes(self):
-        return (
-            db.session.query(ComposeChange)
-            .filter_by(compose_id=self.id)
-            .order_by(ComposeChange.id)
-            .all()
-        )
 
     def retag_stale_composes(self, logged_user, timeout, user_data=None):
         """

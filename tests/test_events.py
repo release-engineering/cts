@@ -200,7 +200,8 @@ class TestMessaging(ModelsBaseTest):
         with app.app_context():
             flask.g.user = Mock(username="odcs")
             self.compose.tag("odcs", "periodic")
-            self.compose.tag("odcs", "nightly")
+            db.session.commit()
+            self.compose.tag("odcs", "nightly", "add nightly tag")
             db.session.commit()
 
         expected_call = call(
@@ -210,6 +211,7 @@ class TestMessaging(ModelsBaseTest):
                     "tag": "periodic",
                     "compose": ANY,
                     "agent": "odcs",
+                    "user_data": None,
                 }
             ]
         )
@@ -222,6 +224,7 @@ class TestMessaging(ModelsBaseTest):
                     "tag": "nightly",
                     "compose": ANY,
                     "agent": "odcs",
+                    "user_data": "add nightly tag",
                 }
             ]
         )
@@ -231,11 +234,13 @@ class TestMessaging(ModelsBaseTest):
         with app.app_context():
             flask.g.user = Mock(username="odcs")
             self.compose.tag("odcs", "periodic")
+            db.session.commit()
             self.compose.tag("odcs", "nightly")
             db.session.commit()
 
             self.compose.untag("odcs", "periodic")
-            self.compose.untag("odcs", "nightly")
+            db.session.commit()
+            self.compose.untag("odcs", "nightly", "untag nightly")
             db.session.commit()
 
         expected_call = call(
@@ -245,6 +250,7 @@ class TestMessaging(ModelsBaseTest):
                     "tag": "periodic",
                     "compose": ANY,
                     "agent": "odcs",
+                    "user_data": None,
                 }
             ]
         )
@@ -257,6 +263,7 @@ class TestMessaging(ModelsBaseTest):
                     "tag": "nightly",
                     "compose": ANY,
                     "agent": "odcs",
+                    "user_data": "untag nightly",
                 }
             ]
         )
@@ -271,8 +278,11 @@ class TestMessaging(ModelsBaseTest):
             flask.g.user = Mock(username="odcs")
             freezer.start()
             self.compose.tag("odcs", "nightly-requested")
+            db.session.commit()
             self.compose.tag("odcs", "candidate-requested")
+            db.session.commit()
             self.compose.tag("odcs", "nightly")
+            db.session.commit()
             freezer.stop()
 
             # Retag only the -requested tags when 1 hour timeout occurs
@@ -290,6 +300,7 @@ class TestMessaging(ModelsBaseTest):
                     "event": "compose-untagged",
                     "tag": "nightly-requested",
                     "compose": ANY,
+                    "user_data": None,
                     "agent": "odcs",
                 }
             ]
@@ -302,6 +313,7 @@ class TestMessaging(ModelsBaseTest):
                     "event": "compose-tagged",
                     "tag": "nightly-requested",
                     "compose": ANY,
+                    "user_data": None,
                     "agent": "odcs",
                 }
             ]
@@ -314,6 +326,7 @@ class TestMessaging(ModelsBaseTest):
                     "event": "compose-untagged",
                     "tag": "candidate-requested",
                     "compose": ANY,
+                    "user_data": None,
                     "agent": "odcs",
                 }
             ]
@@ -326,6 +339,7 @@ class TestMessaging(ModelsBaseTest):
                     "event": "compose-tagged",
                     "tag": "candidate-requested",
                     "compose": ANY,
+                    "user_data": None,
                     "agent": "odcs",
                 }
             ]
