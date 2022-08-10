@@ -99,8 +99,11 @@ class TestComposeModel(ModelsBaseTest):
     def test_create_parent_compose_ids(self):
         # Create for first time
         User.create_user(username="odcs")
+        self.ci.compose.respin += 1
         parent1 = Compose.create(db.session, "odcs", self.ci)[0]
+        self.ci.compose.respin += 1
         parent2 = Compose.create(db.session, "odcs", self.ci)[0]
+        self.ci.compose.respin += 1
         child = Compose.create(
             db.session, "odcs", self.ci, parent_compose_ids=[parent1.id, parent2.id]
         )[0]
@@ -117,11 +120,12 @@ class TestComposeModel(ModelsBaseTest):
         db.session.expire_all()
 
         # Create for second time and check that respin incremented.
+        self.ci.compose.respin += 1
         respin1, ci = Compose.create(db.session, "odcs", self.ci, respin_of=original.id)
+        self.ci.compose.respin += 1
         respin2, ci = Compose.create(db.session, "odcs", self.ci, respin_of=original.id)
         db.session.expire_all()
 
-        composes = db.session.query(Compose).all()
         self.assertEqual(respin1.respin_of, original)
         self.assertEqual(respin2.respin_of, original)
         self.assertEqual(original.respun_by, [respin1, respin2])

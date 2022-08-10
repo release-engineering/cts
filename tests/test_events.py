@@ -60,22 +60,29 @@ class TestRHMsgSendMessageWhenComposeIsCreated(ModelsBaseTest):
 
     def setup_composes(self):
         User.create_user(username="odcs")
-        self.compose = Compose.create(db.session, "odcs", self.ci)[0]
         db.session.commit()
 
     @patch.object(conf, "messaging_backend", new="rhmsg")
     @patch("rhmsg.activemq.producer.AMQProducer")
     @patch("proton.Message")
     def test_send_message(self, Message, AMQProducer):
-        compose = Compose.create(db.session, "odcs", self.ci)[0]
+        with app.app_context():
+            flask.g.user = Mock(username="odcs")
+            compose = Compose.create(db.session, "odcs", self.ci)[0]
 
-        self.assertEqual(
-            json.dumps({"event": "compose-created", "compose": compose.json()}),
-            Message.return_value.body,
-        )
+            self.assertEqual(
+                json.dumps(
+                    {
+                        "event": "compose-created",
+                        "compose": compose.json(),
+                        "agent": "odcs",
+                    }
+                ),
+                Message.return_value.body,
+            )
 
-        producer_send = AMQProducer.return_value.__enter__.return_value.send
-        producer_send.assert_called_once_with(Message.return_value)
+            producer_send = AMQProducer.return_value.__enter__.return_value.send
+            producer_send.assert_called_once_with(Message.return_value)
 
 
 @unittest.skipUnless(
@@ -175,6 +182,7 @@ class TestMessaging(ModelsBaseTest):
     def test_message_compose_create(self, publish):
         with app.app_context():
             flask.g.user = Mock(username="odcs")
+            self.ci.compose.respin += 1
             compose = Compose.create(db.session, "odcs", self.ci)[0]
             db.session.commit()
 

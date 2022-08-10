@@ -155,6 +155,7 @@ class TestViews(ViewBaseTest):
         # Create two composes.
         User.create_user(username="odcs")
         self.c1 = Compose.create(db.session, "odcs", self.ci)[0]
+        self.ci.compose.respin += 1
         Compose.create(db.session, "odcs", self.ci)
 
     def test_index(self):
@@ -822,7 +823,6 @@ class TestViewsComposeTagging(ViewBaseTest):
         t.add_tagger("root", "odcs")
         t.add_untagger("root", "odcs")
         self.c = Compose.create(db.session, "odcs", self.ci)[0]
-        Compose.create(db.session, "odcs", self.ci)
         db.session.commit()
 
     def test_composes_patch_missing_action(self):
