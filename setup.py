@@ -32,13 +32,13 @@ if _:
 setup(
     name="cts",
     description="Compose Tracking service",
-    version="0.0.1",
+    version="1.0.0",
     classifiers=[
         "Programming Language :: Python",
         "Topic :: Software Development :: Build Tools",
     ],
     keywords="compose tracking service",
-    author="The Factory 2.0 Team",
+    author="The Compose Team",
     author_email="cts-owner@fedoraproject.org",
     url="https://pagure.io/cts/",
     license="MIT",
