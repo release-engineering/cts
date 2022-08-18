@@ -32,7 +32,7 @@ if _:
 setup(
     name="cts",
     description="Compose Tracking service",
-    version="1.0.0",
+    version="1.1.0",
     classifiers=[
         "Programming Language :: Python",
         "Topic :: Software Development :: Build Tools",
