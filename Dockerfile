@@ -18,7 +18,8 @@ LABEL \
 
 WORKDIR /src
 
-RUN dnf -y update && dnf -v -y install \
+RUN dnf -y --setopt=install_weak_deps=False update \
+    && dnf -v -y --setopt=install_weak_deps=False install \
         httpd \
         mod_auth_gssapi \
         mod_ldap \
