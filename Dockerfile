@@ -44,7 +44,11 @@ RUN dnf -y --setopt=install_weak_deps=False update \
         python3-sqlalchemy \
         python3-systemd \
         systemd \
-    && dnf -v -y install net-tools iproute iputils traceroute \
+        # Debugging packages \
+        net-tools \
+        iproute \
+        iputils \
+        traceroute \
     && dnf -y clean all \
     && rm -f /tmp/*
 
