@@ -69,7 +69,7 @@ RUN pip3 install --trusted-host pypi.org -r requirements.txt
 
 RUN pip3 install --trusted-host pypi.org --no-deps -e .
 
-RUN mkdir cts/static/ && CTS_DEVELOPER_ENV=1 cts-manager openapispec > cts/static/openapispec.json
+RUN mkdir -p cts/static/ && CTS_DEVELOPER_ENV=1 cts-manager openapispec > cts/static/openapispec.json
 
 EXPOSE 5005
 
