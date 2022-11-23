@@ -134,6 +134,45 @@ class TestComposeModel(ModelsBaseTest):
         self.assertEqual(original.json()["respin_of"], None)
         self.assertEqual(original.json()["respun_by"], [respin1.id, respin2.id])
 
+    def test_create_unique_date_respin(self):
+        User.create_user(username="odcs")
+        # Create for first time.
+        self.ci.compose.respin = 0
+        compose, ci = Compose.create(db.session, "odcs", self.ci)
+        db.session.expire_all()
+        self.assertEqual(compose.respin, 0)
+        self.assertEqual(ci.compose.respin, 0)
+
+        # Create for second time and check that respin incremented.
+        self.ci.compose.respin = 0
+        compose, ci = Compose.create(db.session, "odcs", self.ci)
+        db.session.expire_all()
+        composes = db.session.query(Compose).all()
+        self.assertEqual(len(composes), 2)
+        self.assertEqual(compose.respin, 1)
+        self.assertEqual(ci.compose.respin, 1)
+
+        # Create for another product and check that respin incremented.
+        self.ci.compose.respin = 0
+        self.ci.release.name = "Dummy Product"
+        self.ci.release.short = "DP"
+        compose, ci = Compose.create(db.session, "odcs", self.ci)
+        db.session.expire_all()
+        composes = db.session.query(Compose).all()
+        self.assertEqual(len(composes), 3)
+        self.assertEqual(compose.respin, 2)
+        self.assertEqual(ci.compose.respin, 2)
+
+        # Create compose with another date and check that respin not incremented.
+        self.ci.compose.date = "20221123"
+        self.ci.compose.respin = 0
+        compose, ci = Compose.create(db.session, "odcs", self.ci)
+        db.session.expire_all()
+        composes = db.session.query(Compose).all()
+        self.assertEqual(len(composes), 4)
+        self.assertEqual(compose.respin, 0)
+        self.assertEqual(ci.compose.respin, 0)
+
 
 class TestTagModel(ModelsBaseTest):
     def setup_composes(self):

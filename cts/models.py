@@ -402,6 +402,11 @@ class Compose(CTSBase):
     label = db.Column(db.String, nullable=True)
     final = db.Column(db.Boolean, default=False)
 
+    # This is a redundant column combined of date.respin, e.g 20221123.1
+    # Adding this column as date and respin are expected unique together
+    # for new composes and existing data proabaly violates this constraint.
+    date_respin = db.Column(db.String, nullable=True, unique=True)
+
     # productmd.ComposeInfo.Release fields
     release_name = db.Column(db.String)
     release_version = db.Column(db.String)
@@ -496,6 +501,7 @@ class Compose(CTSBase):
                 "id": ci.create_compose_id(),
                 "date": ci.compose.date,
                 "respin": ci.compose.respin,
+                "date_respin": f"{ci.compose.date}.{ci.compose.respin}",
                 "type": ci.compose.type,
                 "label": ci.compose.label,
                 "final": ci.compose.final,
@@ -525,7 +531,8 @@ class Compose(CTSBase):
                 # Really check that the IntegrityError was caused by
                 # existing compose.
                 existing_compose = Compose.query.filter(
-                    Compose.id == kwargs["id"]
+                    (Compose.id == kwargs["id"])
+                    | (Compose.date_respin == f"{ci.compose.date}.{ci.compose.respin}")
                 ).first()
                 if not existing_compose:
                     raise
