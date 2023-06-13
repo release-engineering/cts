@@ -1064,7 +1064,6 @@ gpgcheck=0
 
 
 class Index(View):
-
     methods = ["GET"]
 
     def dispatch_request(self):
@@ -1072,7 +1071,6 @@ class Index(View):
 
 
 class APIDoc(View):
-
     methods = ["GET"]
 
     def dispatch_request(self):
