@@ -187,6 +187,16 @@ def load_openidc_user(request):
     return user
 
 
+def load_oidc_or_krb_user_from_request(request):
+    """
+    Loads User using OIDC or Kerberos.
+    """
+    if any(var.startswith("OIDC_") for var in request.environ.keys()):
+        return load_openidc_user(request)
+    else:
+        return load_krb_user_from_request(request)
+
+
 @commit_on_success
 def load_anonymous_user(request):
     """Set anonymous user for "noauth" backend."""
@@ -285,6 +295,12 @@ def init_auth(login_manager, backend):
         global load_krb_or_ssl_user_from_request
         load_krb_or_ssl_user_from_request = login_manager.request_loader(
             load_krb_or_ssl_user_from_request
+        )
+    elif backend == "oidc_or_kerberos":
+        _validate_kerberos_config()
+        global load_oidc_or_krb_user_from_request
+        load_oidc_or_krb_user_from_request = login_manager.request_loader(
+            load_oidc_or_krb_user_from_request
         )
     elif backend == "ssl":
         global load_ssl_user_from_request
