@@ -743,6 +743,16 @@ class TestViewsQueryByTag(ViewBaseTest):
             data["items"][0]["compose_info"]["payload"]["compose"]["respin"], 2
         )
 
+    def test_composes_with_two_tags(self):
+        with self.test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/composes/?tag=test&tag=removed")
+            data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(len(data["items"]), 1)
+        self.assertEqual(
+            data["items"][0]["compose_info"]["payload"]["compose"]["respin"], 1
+        )
+
 
 class TestViewsQueryBeforeAfterDate(ViewBaseTest):
     def setup_test_data(self):

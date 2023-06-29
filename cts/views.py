@@ -304,9 +304,16 @@ class ComposesListAPI(MethodView):
               type: string
             rquired: false
             description: |
-              Return only composes tagged by one of these tags. Use empty value (``?tag=``)
-              to get composes with no tag, or prefix the tag name with ``-`` to get composes
-              not tagged with this tag.
+              Return only composes tagged with all given tags.
+              The parameter can be specified multiple times.
+
+              If the tag name starts with ``-``, the result will contain
+              composes not tagged with that tag.
+
+              Use single empty value (``?tag=``) to get composes with no tag.
+
+              Example: ``?tag=A&tag=B&tag=-C`` - get composes tagged with A and B, but not C.
+
           - name: order_by
             in: query
             schema:

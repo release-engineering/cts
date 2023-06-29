@@ -198,7 +198,7 @@ def filter_composes(flask_request):
                 if tag.startswith("-"):
                     query = query.filter(~Compose.tags.any(Tag.name == tag[1:]))
                 else:
-                    query = query.filter(Tag.name == tag)
+                    query = query.filter(Compose.tags.any(Tag.name == tag))
 
     query = _order_by(flask_request, query, Compose, allowed_keys, ["-date", "-id"])
 
