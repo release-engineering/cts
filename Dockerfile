@@ -1,11 +1,11 @@
-FROM fedora:36 AS builder
+FROM fedora:38 AS builder
 WORKDIR /src
 RUN dnf -y install git
 COPY . .
 RUN sed -i -e "s/version=.*/version='$(./get-version.sh)',/" setup.py
 
 
-FROM fedora:36
+FROM fedora:38
 
 ARG cacert_url=undefined
 ARG build_date=unknown

@@ -12,7 +12,6 @@ RUN dnf -y install \
     python3-ldap \
     python3-mock \
     python3-sphinx \
-    python3-sphinxcontrib-httpdomain \
     python3-tox \
     && dnf clean all
 
