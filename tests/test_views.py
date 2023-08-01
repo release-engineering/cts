@@ -696,6 +696,25 @@ class TestViews(ViewBaseTest):
         self.assertEqual(data["status"], 400)
         self.assertTrue("Unknown action." in data["message"])
 
+    def test_composes_multiple_query_filters(self):
+        rv = self.client.get("/api/1/composes/?tag=foo&tag=bar")
+        data = json.loads(rv.get_data(as_text=True))
+
+        self.assertEqual(rv.status_code, 200)
+        self.assertEqual(
+            data["meta"],
+            {
+                "first": "http://localhost/api/1/composes/?page=1&per_page=10&tag=foo&tag=bar",
+                "last": "http://localhost/api/1/composes/?page=0&per_page=10&tag=foo&tag=bar",
+                "next": None,
+                "page": 1,
+                "pages": 0,
+                "per_page": 10,
+                "prev": None,
+                "total": 0,
+            },
+        )
+
 
 class TestViewsQueryByTag(ViewBaseTest):
     def setup_test_data(self):

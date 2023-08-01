@@ -19,7 +19,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import copy
 from flask import request, url_for
 from sqlalchemy import cast, func, ARRAY, Integer
 
@@ -36,7 +35,7 @@ def pagination_metadata(p_query, request_args):
     :return: a dictionary containing metadata about the paginated query
     """
 
-    request_args_wo_page = dict(copy.deepcopy(request_args))
+    request_args_wo_page = request_args.to_dict(flat=False)
     # Remove pagination related args because those are handled elsewhere
     # Also, remove any args that url_for accepts in case the user entered
     # those in
