@@ -21,12 +21,21 @@
 #
 # Written by Jan Kaluza <jkaluza@redhat.com>
 
+import os
 from logging import getLogger
 
 from flask import Flask, jsonify
 from flask_login import LoginManager
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.exceptions import BadRequest, Unauthorized, NotFound as WerkzeugNotFound
+
+from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource, SERVICE_NAME
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import ConsoleSpanExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
 
 from cts.logger import init_logging
 from cts.config import init_config
@@ -58,6 +67,20 @@ from cts import views  # noqa
 from cts.auth import init_auth  # noqa
 
 init_auth(login_manager, conf.auth_backend)
+
+# Set up telemetry exporter if configured.
+provider = TracerProvider(resource=Resource.create({SERVICE_NAME: "cts"}))
+trace.set_tracer_provider(provider)
+exporter_url = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+if exporter_url == "console":
+    provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+elif exporter_url:
+    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+
+tracer = trace.get_tracer(__name__)
+
+# Initialize Flask drop-in instrumentation middleware
+FlaskInstrumentor().instrument_app(app, tracer_provider=provider)
 
 
 def json_error(status, error, message):

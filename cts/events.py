@@ -27,6 +27,9 @@ import flask
 from logging import getLogger
 from sqlalchemy.orm import attributes
 
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+
 log = getLogger()
 
 _cache_lock = Lock()
@@ -74,6 +77,10 @@ def cache_composes_if_state_changed(session, flush_context):
                 extra_args["agent"] = flask.g.user.username
             else:
                 extra_args["agent"] = None
+            # Add telemetry information. This includes an extra key
+            # traceparent.
+            TraceContextTextMapPropagator().inject(extra_args)
+
             msg.update(extra_args)
             _cached_composes[comp.id].append(msg)
 

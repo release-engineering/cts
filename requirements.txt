@@ -12,3 +12,6 @@ Werkzeug <= 2.0.3  # Newer version removed a func needed by Flask-Login
 apispec==5.2.2  # Pin version to install from pypi
 apispec-webframeworks==0.5.2  # Pin version to install from pypi
 marshmallow
+opentelemetry-instrumentation-flask
+opentelemetry-instrumentation-sqlalchemy
+opentelemetry-exporter-otlp-proto-http
