@@ -36,6 +36,7 @@ from opentelemetry.sdk.trace.export import ConsoleSpanExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 
 from cts.logger import init_logging
 from cts.config import init_config
@@ -81,6 +82,8 @@ tracer = trace.get_tracer(__name__)
 
 # Initialize Flask drop-in instrumentation middleware
 FlaskInstrumentor().instrument_app(app, tracer_provider=provider)
+if "CTS_INSTRUMENT_DATABASE" in os.environ:
+    SQLAlchemyInstrumentor().instrument()
 
 
 def json_error(status, error, message):

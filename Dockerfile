@@ -46,6 +46,7 @@ RUN dnf -y --setopt=install_weak_deps=False update \
         python3-systemd \
         python3-opentelemetry-sdk \
         python3-opentelemetry-instrumentation-flask \
+        python3-opentelemetry-instrumentation-sqlalchemy \
         python3-opentelemetry-exporter-otlp-proto-http \
         systemd \
         # Debugging packages \
