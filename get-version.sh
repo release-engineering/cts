@@ -16,19 +16,22 @@ else
     lastversion="${lasttag##${name}-}"
     revbase="^$lasttag"
 fi
+
+if [[ $lastversion == v* ]] ; then
+    # strip the "v" prefix
+    lastversion="${lastversion:1}"
+fi
+
 if [ "$(git rev-list $revbase HEAD | wc -l)" -eq 0 ] ; then
     # building a tag
     version="$lastversion"
 else
     # git builds count as a pre-release of the next version
     version="$lastversion"
-    version="${version:1}" # strip the "v" prefix
     version="${version%%[a-z]*}" # strip non-numeric suffixes like "rc1"
-    # increment the last portion of the version
-    version="${version%.*}.$((${version##*.} + 1))"
     commitcount=$(git rev-list $revbase HEAD | wc -l)
     commitsha=$(git rev-parse --short HEAD)
-    version="${version}.dev${commitcount}+git.${commitsha}"
+    version="${version}.post${commitcount}+git.${commitsha}"
 fi
 
 echo $version
