@@ -39,7 +39,7 @@ from cts import app, conf, version, db
 from cts.errors import NotFound, Forbidden
 from cts.models import Compose, Tag
 from cts.api_utils import pagination_metadata, filter_composes, filter_tags
-from cts.auth import requires_role, require_scopes, has_role
+from cts.auth import requires_role, require_scopes, require_oidc_scope, has_role
 from cts.metrics import registry
 
 
@@ -1070,6 +1070,108 @@ gpgcheck=0
         return Response(content, content_type="text/plain")
 
 
+class UserInfoAPI(MethodView):
+    @login_required
+    def get(self):
+        """Return information about current logged in user.
+
+        ---
+        summary: User info
+        description: Return information about current logged in user.
+        responses:
+          200:
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    username:
+                      description: uesrname of current user.
+                      type: string
+                    permissions:
+                      type: object
+                      properties:
+                        can_create_compose:
+                          description: |
+                            You can `create new composes` if you have `allowed_builders` role.
+                            Note that if `auth_backend` is `openidc` you must also in `new-compose` scope.
+                          type: boolean
+                        can_create_tag:
+                          description: |
+                            You can `create new tags` if you have `admins` role.
+                            Note that if `auth_backend` is `openidc` you must also in `new-tag` scope.
+                          type: boolean
+                        can_edit_tag:
+                          description: |
+                            You can `edit tags` if you have `admins` role.
+                            Note that if `auth_backend` is `openidc` you must also in `edit-tag` scope.
+                          type: boolean
+                        can_set_url:
+                          description: |
+                            You can `update compose_url` if you have `admins` or `allowed_builders` role.
+                            Note that if `auth_backend` is `openidc` you must also in `edit-compose` scope.
+                          type: boolean
+                        is_tagger_of:
+                          description: |
+                            You can `tag composes` with these tags if you have `admins` role or in `taggers` of the tag.
+                            Note that if `auth_backend` is `openidc` you must also in `edit-compose` scope.
+                          type: array of tag names
+                        is_untagger_of:
+                          description: |
+                            You can `untag composes` with these tags if you have `admins` role or in `untaggers` of the tag.
+                            Note that if `auth_backend` is `openidc` you must also in `edit-compose` scope.
+                          type: array of tag names
+        """
+        # While using openidc auth backend, it's required in the desired scope.
+        in_new_compose_scope = any(
+            [
+                conf.auth_backend != "openidc",
+                conf.auth_backend == "openidc" and require_oidc_scope("new-compose"),
+            ]
+        )
+        in_edit_compose_scope = any(
+            [
+                conf.auth_backend != "openidc",
+                conf.auth_backend == "openidc" and require_oidc_scope("edit-compose"),
+            ]
+        )
+        in_new_tag_scope = any(
+            [
+                conf.auth_backend != "openidc",
+                conf.auth_backend == "openidc" and require_oidc_scope("new-tag"),
+            ]
+        )
+        in_edit_tag_scope = any(
+            [
+                conf.auth_backend != "openidc",
+                conf.auth_backend == "openidc" and require_oidc_scope("edit-tag"),
+            ]
+        )
+        is_admin = has_role("admins")
+        is_allowed_builder = has_role("allowed_builders")
+        is_tagger_of = []
+        is_untagger_of = []
+        for t in Tag.query.all():
+            if in_edit_compose_scope and (is_admin or g.user in t.taggers):
+                is_tagger_of.append(t.name)
+            if in_edit_compose_scope and (is_admin or g.user in t.untaggers):
+                is_untagger_of.append(t.name)
+
+        data = {
+            "username": g.user.username,
+            "permissions": {
+                "can_create_compose": in_new_compose_scope and is_allowed_builder,
+                "can_create_tag": in_new_tag_scope and is_admin,
+                "can_edit_tag": in_edit_tag_scope and is_admin,
+                "can_set_url": in_edit_compose_scope
+                and (is_admin or is_allowed_builder),
+                "is_tagger_of": is_tagger_of,
+                "is_untagger_of": is_untagger_of,
+            },
+        }
+        return jsonify(data), 200
+
+
 class Index(View):
     methods = ["GET"]
 
@@ -1135,6 +1237,11 @@ def register_api_v1():
                 "methods": ["GET"],
             },
             "view_class": RepoAPI,
+        },
+        "userinfo": {
+            "url": "/api/1/userinfo",
+            "options": {"methods": ["GET"]},
+            "view_class": UserInfoAPI,
         },
         "metrics": {
             "url": "/api/1/metrics/",

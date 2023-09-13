@@ -229,9 +229,9 @@ def require_oidc_scope(scope):
     """Check if required scopes is in OIDC scopes within request"""
     full_scope = "{0}{1}".format(conf.oidc_base_namespace, scope)
     if conf.auth_backend == "openidc" and full_scope not in g.oidc_scopes:
-        message = "Request does not have required scope %s" % scope
-        log.error(message)
-        raise Forbidden(message)
+        return False
+    else:
+        return True
 
 
 def require_scopes(*scopes):
@@ -242,7 +242,10 @@ def require_scopes(*scopes):
         def decorator(*args, **kwargs):
             if conf.auth_backend != "noauth":
                 for scope in scopes:
-                    require_oidc_scope(scope)
+                    if not require_oidc_scope(scope):
+                        message = "Request does not have required scope %s" % scope
+                        log.error(message)
+                        raise Forbidden(message)
             return f(*args, **kwargs)
 
         return decorator
