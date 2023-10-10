@@ -1,17 +1,17 @@
 python-fedora
-sqlalchemy
-Flask >= 0.11
+sqlalchemy<2.0  # For Flask 2.2.3
+Flask==2.2.3  # Pin version for Flask-Login
 Flask-Migrate
-Flask-SQLAlchemy
-Flask-Login < 0.5.0
+Flask-SQLAlchemy<3.0  # For sqlalchemy and Flask
+Flask-Login==0.6.2
 requests
 productmd
 python-ldap
 prometheus_client
-Werkzeug <= 2.0.3  # Newer version removed a func needed by Flask-Login
-apispec==5.2.2  # Pin version to install from pypi
+Werkzeug==2.2.3  # Flask-Login is not compatible with newer version
+apispec==6.3.0  # Pin version to install from pypi
 apispec-webframeworks==0.5.2  # Pin version to install from pypi
-marshmallow
+marshmallow>=3.18.0
 opentelemetry-instrumentation-flask
 opentelemetry-instrumentation-sqlalchemy
 opentelemetry-exporter-otlp-proto-http

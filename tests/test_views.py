@@ -74,7 +74,7 @@ class ViewBaseTest(ModelsBaseTest):
         self.patch_admins.stop()
 
     @contextlib.contextmanager
-    def test_request_context(self, user=None, groups=None, **kwargs):
+    def _test_request_context(self, user=None, groups=None, **kwargs):
         with app.test_request_context(**kwargs):
             patch_auth_backend = None
             if user is not None:
@@ -87,6 +87,7 @@ class ViewBaseTest(ModelsBaseTest):
                     User.create_user(username=user)
                     db.session.commit()
                 flask.g.user = User.find_user_by_name(user)
+                flask.g._login_user = flask.g.user
                 flask.g.oidc_scopes = [
                     "{0}{1}".format(conf.oidc_base_namespace, "new-compose")
                 ]
@@ -177,7 +178,7 @@ class TestViews(ViewBaseTest):
         )
 
     def test_composes_post_invalid_json(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.post("/api/1/composes/", data="{")
             data = json.loads(rv.get_data(as_text=True))
 
@@ -189,7 +190,7 @@ class TestViews(ViewBaseTest):
     def test_composes_get(self):
         self.ci.compose.date = "20200518"
         Compose.create(db.session, "odcs", self.ci)
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/?date=20200518")
             data = json.loads(rv.get_data(as_text=True))
 
@@ -198,7 +199,7 @@ class TestViews(ViewBaseTest):
     def test_composes_get_startswith(self):
         self.ci.compose.date = "20200518"
         Compose.create(db.session, "odcs", self.ci)
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get(
                 "/api/1/composes/?id_startswith=Fedora-Rawhide-20200517.n."
             )
@@ -209,7 +210,7 @@ class TestViews(ViewBaseTest):
     def test_composes_get_endswith(self):
         self.ci.compose.date = "20200518"
         Compose.create(db.session, "odcs", self.ci)
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/?date_endswith=0517")
             data = json.loads(rv.get_data(as_text=True))
 
@@ -218,7 +219,7 @@ class TestViews(ViewBaseTest):
     def test_composes_get_contains(self):
         self.ci.compose.date = "20200518"
         Compose.create(db.session, "odcs", self.ci)
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/?id_contains=20200517.n.")
             data = json.loads(rv.get_data(as_text=True))
 
@@ -227,7 +228,7 @@ class TestViews(ViewBaseTest):
     def test_composes_get_untagged(self):
         self.ci.compose.date = "20200518"
         Compose.create(db.session, "odcs", self.ci)
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/?tag=&date=20200518")
             data = json.loads(rv.get_data(as_text=True))
 
@@ -241,7 +242,7 @@ class TestViews(ViewBaseTest):
         self.ci.release.short = "Z"
         self.ci.compose.respin = 0
         Compose.create(db.session, "odcs", self.ci)
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/")
             data = json.loads(rv.get_data(as_text=True))
 
@@ -275,7 +276,7 @@ class TestViews(ViewBaseTest):
             )
             Compose.create(db.session, "odcs", self.ci)
 
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/?order_by=release_version")
             data = json.loads(rv.get_data(as_text=True))
 
@@ -292,7 +293,7 @@ class TestViews(ViewBaseTest):
         ]
         self.assertEqual(expected_compose_ids, compose_ids)
 
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get(
                 "/api/1/composes/?order_by=release_version&order_by=date"
             )
@@ -312,7 +313,7 @@ class TestViews(ViewBaseTest):
         self.assertEqual(expected_compose_ids, compose_ids)
 
     def test_composes_post(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.post(
                 "/api/1/composes/", json={"compose_info": json.loads(self.ci.dumps())}
             )
@@ -331,7 +332,7 @@ class TestViews(ViewBaseTest):
         self.assertEqual(c.respin, 3)
 
     def test_composes_post_no_compose_info(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.post("/api/1/composes/", json={"foo": "bar"})
             data = json.loads(rv.get_data(as_text=True))
 
@@ -341,7 +342,7 @@ class TestViews(ViewBaseTest):
         self.assertEqual(data["message"], 'No "compose_info" field in JSON POST data.')
 
     def test_composes_post_invalid_compose_info(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.post(
                 "/api/1/composes/", json={"compose_info": {"foo": "bar"}}
             )
@@ -353,7 +354,7 @@ class TestViews(ViewBaseTest):
         self.assertTrue(data["message"].startswith('Cannot parse "compose_info"'))
 
     def test_composes_post_builder_not_allowed(self):
-        with self.test_request_context(user="foo"):
+        with self._test_request_context(user="foo"):
             rv = self.client.post(
                 "/api/1/composes/", json={"compose_info": json.loads(self.ci.dumps())}
             )
@@ -361,7 +362,7 @@ class TestViews(ViewBaseTest):
         self.assertEqual(rv.status, "403 FORBIDDEN")
 
     def test_composes_post_parent_compose_ids(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.post(
                 "/api/1/composes/",
                 json={
@@ -390,7 +391,7 @@ class TestViews(ViewBaseTest):
         self.assertEqual(c1.children, [c])
 
     def test_composes_post_wrong_parent_compose_ids(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.post(
                 "/api/1/composes/",
                 json={
@@ -413,7 +414,7 @@ class TestViews(ViewBaseTest):
         self.assertEqual(c, None)
 
     def test_composes_post_respin_of(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.post(
                 "/api/1/composes/",
                 json={
@@ -442,7 +443,7 @@ class TestViews(ViewBaseTest):
         self.assertEqual(c1.respun_by, [c])
 
     def test_composes_post_wrong_respin_of(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.post(
                 "/api/1/composes/",
                 json={
@@ -521,7 +522,7 @@ class TestViews(ViewBaseTest):
         self.assertEqual(data, expected_data)
 
     def test_tags_post(self):
-        with self.test_request_context(user="root"):
+        with self._test_request_context(user="root"):
             req = {
                 "name": "periodic",
                 "description": "Periodic compose",
@@ -542,7 +543,7 @@ class TestViews(ViewBaseTest):
         self.assertEqual(data, expected_data)
 
     def test_tags_post_existed(self):
-        with self.test_request_context(user="root"):
+        with self._test_request_context(user="root"):
             req = {
                 "name": "periodic",
                 "description": "Periodic compose",
@@ -561,7 +562,7 @@ class TestViews(ViewBaseTest):
         self.assertEqual(data["message"], "Tag %s already exists" % req["name"])
 
     def test_tags_post_unathorized(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             req = {
                 "name": "periodic",
                 "description": "Periodic compose",
@@ -572,7 +573,7 @@ class TestViews(ViewBaseTest):
 
     def test_tags_post_incomplete(self):
         for key in ["name", "description", "documentation"]:
-            with self.test_request_context(user="root"):
+            with self._test_request_context(user="root"):
                 req = {
                     "name": "periodic",
                     "description": "Periodic compose",
@@ -589,7 +590,7 @@ class TestViews(ViewBaseTest):
 
     def test_tags_patch(self):
         self.test_tags_post()
-        with self.test_request_context(user="root"):
+        with self._test_request_context(user="root"):
             req = {
                 "name": "periodic-update",
                 "description": "Periodic compose update",
@@ -611,7 +612,7 @@ class TestViews(ViewBaseTest):
 
     def test_tags_patch_existed(self):
         self.test_tags_post()
-        with self.test_request_context(user="root"):
+        with self._test_request_context(user="root"):
             for name in ["t1", "t2"]:
                 req = {
                     "name": name,
@@ -630,7 +631,7 @@ class TestViews(ViewBaseTest):
 
     def test_tags_patch_unauthorized(self):
         self.test_tags_post()
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             req = {
                 "name": "periodic-update",
                 "description": "Periodic compose update",
@@ -649,7 +650,7 @@ class TestViews(ViewBaseTest):
             "add_untagger",
             "remove_untagger",
         ]:
-            with self.test_request_context(user="root"):
+            with self._test_request_context(user="root"):
                 req = {"action": action, "username": "odcs"}
                 rv = self.client.patch("/api/1/tags/1", json=req)
                 data = json.loads(rv.get_data(as_text=True))
@@ -667,7 +668,7 @@ class TestViews(ViewBaseTest):
 
     def test_tags_patch_actions_unknown_user(self):
         self.test_tags_post()
-        with self.test_request_context(user="root"):
+        with self._test_request_context(user="root"):
             req = {"action": "add_tagger", "username": "not-existing"}
             rv = self.client.patch("/api/1/tags/1", json=req)
             data = json.loads(rv.get_data(as_text=True))
@@ -686,7 +687,7 @@ class TestViews(ViewBaseTest):
     def test_tags_patch_actions_unknown_action(self):
         self.test_tags_post()
         db.session.commit()
-        with self.test_request_context(user="root"):
+        with self._test_request_context(user="root"):
             req = {"action": "not-existing", "username": "odcs"}
             rv = self.client.patch("/api/1/tags/1", json=req)
             data = json.loads(rv.get_data(as_text=True))
@@ -742,7 +743,7 @@ class TestViewsQueryByTag(ViewBaseTest):
         c.tag("odcs", "removed")
 
     def test_composes_get_without_tag(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/?tag=-removed")
             data = json.loads(rv.get_data(as_text=True))
 
@@ -753,7 +754,7 @@ class TestViewsQueryByTag(ViewBaseTest):
         )
 
     def test_composes_get_with_and_without_tag(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/?tag=test&tag=-removed")
             data = json.loads(rv.get_data(as_text=True))
 
@@ -763,7 +764,7 @@ class TestViewsQueryByTag(ViewBaseTest):
         )
 
     def test_composes_with_two_tags(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/?tag=test&tag=removed")
             data = json.loads(rv.get_data(as_text=True))
 
@@ -783,7 +784,7 @@ class TestViewsQueryBeforeAfterDate(ViewBaseTest):
             Compose.create(db.session, "odcs", self.ci)
 
     def query_with_filter(self, query):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/?" + query)
             return [
                 c["compose_info"]["payload"]["compose"]["date"]
@@ -855,7 +856,7 @@ class TestViewsComposeTagging(ViewBaseTest):
         db.session.commit()
 
     def test_composes_patch_missing_action(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             req = {"tag": "periodic"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -869,7 +870,7 @@ class TestViewsComposeTagging(ViewBaseTest):
 
     def test_composes_patch_missing_tag(self):
         for action in ["tag", "untag"]:
-            with self.test_request_context(user="odcs"):
+            with self._test_request_context(user="odcs"):
                 req = {
                     "action": action,
                 }
@@ -884,7 +885,7 @@ class TestViewsComposeTagging(ViewBaseTest):
             self.assertEqual(data["message"], 'No "tag" field in JSON PATCH data.')
 
     def test_composes_patch_wrong_action(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             req = {"action": "not-existing", "tag": "periodic"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -897,7 +898,7 @@ class TestViewsComposeTagging(ViewBaseTest):
         self.assertEqual(data["message"], "Unknown action.")
 
     def test_composes_patch_tag(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             req = {"action": "tag", "tag": "periodic"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -905,13 +906,13 @@ class TestViewsComposeTagging(ViewBaseTest):
             data = json.loads(rv.get_data(as_text=True))
         self.assertEqual(data["tags"], ["periodic"])
 
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/?tag=periodic")
             data = json.loads(rv.get_data(as_text=True))
         self.assertEqual(len(data["items"]), 1)
 
     def test_composes_patch_tag_no_tagger(self):
-        with self.test_request_context(user="foo"):
+        with self._test_request_context(user="foo"):
             req = {"action": "tag", "tag": "periodic"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -919,7 +920,7 @@ class TestViewsComposeTagging(ViewBaseTest):
         self.assertEqual(rv.status, "403 FORBIDDEN")
 
     def test_composes_patch_tag_admin(self):
-        with self.test_request_context(user="root"):
+        with self._test_request_context(user="root"):
             req = {"action": "tag", "tag": "periodic"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -928,7 +929,7 @@ class TestViewsComposeTagging(ViewBaseTest):
         self.assertEqual(data["tags"], ["periodic"])
 
     def test_composes_patch_tag_wrong_tag(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             req = {"action": "tag", "tag": "not-existing"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -942,7 +943,7 @@ class TestViewsComposeTagging(ViewBaseTest):
 
     def test_composes_patch_untag(self):
         self.c.tag("odcs", "periodic")
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             req = {"action": "untag", "tag": "periodic"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -953,7 +954,7 @@ class TestViewsComposeTagging(ViewBaseTest):
     def test_composes_patch_untag_no_untagger(self):
         self.c.tag("odcs", "periodic")
         db.session.commit()
-        with self.test_request_context(user="foo"):
+        with self._test_request_context(user="foo"):
             req = {"action": "untag", "tag": "periodic"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -963,7 +964,7 @@ class TestViewsComposeTagging(ViewBaseTest):
     def test_composes_patch_untag_admin(self):
         self.c.tag("odcs", "periodic")
         db.session.commit()
-        with self.test_request_context(user="root"):
+        with self._test_request_context(user="root"):
             req = {"action": "untag", "tag": "periodic"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -973,7 +974,7 @@ class TestViewsComposeTagging(ViewBaseTest):
 
     def test_composes_patch_untag_wrong_untag(self):
         self.c.tag("odcs", "periodic")
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             req = {"action": "untag", "tag": "not-existing"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -997,7 +998,7 @@ class TestViewsComposeRepo(ViewBaseTest):
 
     def test_composes_patch_repo(self):
         url = "http://127.0.0.1/composes/Fedora-Rawhide-20200517.n.1"
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             req = {"action": "set_url", "compose_url": url}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -1006,7 +1007,7 @@ class TestViewsComposeRepo(ViewBaseTest):
         self.assertEqual(data["compose_url"], url)
 
     def test_composes_patch_repo_missing_compose_url(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             req = {"action": "set_url"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -1018,7 +1019,7 @@ class TestViewsComposeRepo(ViewBaseTest):
         self.assertEqual(data["message"], 'No "compose_url" field in JSON PATCH data.')
 
     def test_composes_patch_repo_wrong_compose_url(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             req = {"action": "set_url", "compose_url": "invalid-url"}
             rv = self.client.patch(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1", json=req
@@ -1032,7 +1033,7 @@ class TestViewsComposeRepo(ViewBaseTest):
         )
 
     def test_composes_get_repo(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1/repo/?variant=AppStream"
             )
@@ -1048,7 +1049,7 @@ gpgcheck=0
     def test_composes_get_repo_no_compose_url(self):
         self.c.compose_url = None
         db.session.commit()
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get(
                 "/api/1/composes/Fedora-Rawhide-20200517.n.1/repo/?variant=AppStream"
             )
@@ -1059,7 +1060,7 @@ gpgcheck=0
         self.assertEqual(data["message"], "Compose does not have any URL set")
 
     def test_composes_get_repo_missing_variant(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/Fedora-Rawhide-20200517.n.1/repo/")
             data = json.loads(rv.get_data(as_text=True))
         self.assertEqual(rv.status, "400 BAD REQUEST")
@@ -1078,7 +1079,7 @@ class TestViewsComposeChanges(ViewBaseTest):
         db.session.commit()
 
     def test_initial_change(self):
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/Fedora-Rawhide-20200517.n.1/changes/")
             data = json.loads(rv.get_data(as_text=True))
         self.assertEqual(rv.status, "200 OK")
@@ -1090,7 +1091,7 @@ class TestViewsComposeChanges(ViewBaseTest):
             db.session, "odcs", name="test", description="test", documentation="test"
         )
         self.c.tag("odcs", "test")
-        with self.test_request_context(user="odcs"):
+        with self._test_request_context(user="odcs"):
             rv = self.client.get("/api/1/composes/Fedora-Rawhide-20200517.n.1/changes/")
             data = json.loads(rv.get_data(as_text=True))
         self.assertEqual(rv.status, "200 OK")
