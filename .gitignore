@@ -11,3 +11,4 @@ cts.db
 .vagrant
 .idea
 *.patch
+docs/_build/

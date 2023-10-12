@@ -7,7 +7,7 @@
 Compose Tracking Service (CTS)
 ==============================
 
-Compose Tracking Service (CTS) is a small service storing specific metadata about each Pungi Compose.
+`Compose Tracking Service (CTS)`_ is a small service storing specific metadata about each Pungi Compose.
 It provides a REST API to manipulate these metadata and sends UMB messages on every change of these metadata.
 
 .. toctree::
@@ -18,12 +18,4 @@ It provides a REST API to manipulate these metadata and sends UMB messages on ev
    api
    dev
 
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
-
-
-.. _CTS: https://pagure.io/cts
+.. _Compose Tracking Service (CTS): https://pagure.io/cts
