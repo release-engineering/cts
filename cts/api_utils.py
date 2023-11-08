@@ -21,6 +21,7 @@
 
 from flask import request, url_for
 from sqlalchemy import cast, func, ARRAY, Integer
+from sqlalchemy.orm import selectinload
 
 from cts.models import Compose, Tag
 
@@ -167,6 +168,13 @@ def filter_composes(flask_request):
                 search_query[key] = (flask_request.args[key + suffix], suffix)
 
     query = Compose.query
+    query = query.options(
+        selectinload(Compose.tags),
+        selectinload(Compose.parents),
+        selectinload(Compose.respin_of),
+        selectinload(Compose.children),
+        selectinload(Compose.respun_by),
+    )
     for key, data in search_query.items():
         value, suffix = data
         column = getattr(Compose, key)
