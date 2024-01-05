@@ -256,7 +256,7 @@ def require_scopes(*scopes):
 def get_user_info(token):
     """Query FAS groups from Fedora"""
     headers = {"authorization": "Bearer {0}".format(token)}
-    r = requests.get(conf.auth_openidc_userinfo_uri, headers=headers)
+    r = requests.get(conf.auth_openidc_userinfo_uri, headers=headers, timeout=5)
     if r.status_code != 200:
         # In Fedora, the manually created service tokens can't be used with the UserInfo
         # endpoint. We treat this as an empty response - and hence an empty group list. An empty
