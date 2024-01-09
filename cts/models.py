@@ -447,7 +447,7 @@ class Compose(CTSBase):
     # Current URL to the top level directory of this compose
     compose_url = db.Column(db.String, nullable=True)
 
-    changes = db.relationship("ComposeChange")
+    changes = db.relationship("ComposeChange", order_by="ComposeChange.time")
 
     @classmethod
     def create(
