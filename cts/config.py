@@ -22,9 +22,10 @@
 #
 # Written by Jan Kaluza <jkaluza@redhat.com>
 
-import imp
 import os
 import sys
+
+from importlib.machinery import SourceFileLoader
 
 from cts import logger
 
@@ -82,7 +83,9 @@ def init_config(app):
     # try loading configuration from file
     if not config_module:
         try:
-            config_module = imp.load_source("cts_runtime_config", config_file)
+            config_module = SourceFileLoader(
+                "cts_runtime_config", config_file
+            ).load_module()
         except Exception:
             raise SystemError(
                 "Configuration file {} was not found.".format(config_file)
