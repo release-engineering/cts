@@ -200,7 +200,6 @@ def filter_composes(flask_request):
             # Get just composes without any Compose.tags.
             query = query.filter(~Compose.tags.any())
         else:
-            query = query.outerjoin(Compose.tags, aliased=True)
             for tag in tags:
                 if tag.startswith("-"):
                     query = query.filter(~Compose.tags.any(Tag.name == tag[1:]))
