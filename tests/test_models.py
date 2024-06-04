@@ -324,6 +324,10 @@ class TestTagModel(ModelsBaseTest):
         self.assertEqual(self.compose.tags, [Tag.get_by_name("periodic")])
         self.assertEqual(ret, True)
 
+        # Re-tag with "periodic"
+        ret = self.compose.tag("odcs", "periodic", user_data="Ticket #123")
+        self.assertEqual(ret, True)  # Re-tagging should not present any errors
+
         # Untag "nightly" which is not tagged yet.
         ret = self.compose.untag("odcs", "nightly")
         self.assertEqual(ret, True)
