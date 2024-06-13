@@ -406,6 +406,11 @@ class Compose(CTSBase):
     # Adding this column as date and respin are expected unique together
     # for new composes and existing data proabaly violates this constraint.
     date_respin = db.Column(db.String, nullable=True, unique=True)
+    # This is a redundant column combining release_short, release_version,
+    # date and respin. It's used to make date.respin combination unique for
+    # each release stream.
+    # Old data violates this, thus it's nullable.
+    release_date_respin = db.Column(db.String, nullable=True, unique=True)
 
     # productmd.ComposeInfo.Release fields
     release_name = db.Column(db.String)
@@ -497,11 +502,15 @@ class Compose(CTSBase):
                 )
 
         while True:
+            release = f"{ci.release.short}-{ci.release.version}"
+            date_respin = f"{ci.compose.date}.{ci.compose.respin}"
+            release_date_respin = f"{release}-{date_respin}"
             kwargs = {
                 "id": ci.create_compose_id(),
                 "date": ci.compose.date,
                 "respin": ci.compose.respin,
-                "date_respin": f"{ci.compose.date}.{ci.compose.respin}",
+                "date_respin": date_respin,
+                "release_date_respin": release_date_respin,
                 "type": ci.compose.type,
                 "label": ci.compose.label,
                 "final": ci.compose.final,
@@ -532,7 +541,8 @@ class Compose(CTSBase):
                 # existing compose.
                 existing_compose = Compose.query.filter(
                     (Compose.id == kwargs["id"])
-                    | (Compose.date_respin == f"{ci.compose.date}.{ci.compose.respin}")
+                    | (Compose.date_respin == date_respin)
+                    | (Compose.release_date_respin == release_date_respin)
                 ).first()
                 if not existing_compose:
                     raise
