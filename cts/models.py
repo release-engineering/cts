@@ -509,7 +509,6 @@ class Compose(CTSBase):
                 "id": ci.create_compose_id(),
                 "date": ci.compose.date,
                 "respin": ci.compose.respin,
-                "date_respin": date_respin,
                 "release_date_respin": release_date_respin,
                 "type": ci.compose.type,
                 "label": ci.compose.label,
@@ -541,7 +540,6 @@ class Compose(CTSBase):
                 # existing compose.
                 existing_compose = Compose.query.filter(
                     (Compose.id == kwargs["id"])
-                    | (Compose.date_respin == date_respin)
                     | (Compose.release_date_respin == release_date_respin)
                 ).first()
                 if not existing_compose:

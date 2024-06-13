@@ -152,7 +152,7 @@ class TestComposeModel(ModelsBaseTest):
         self.assertEqual(compose.respin, 1)
         self.assertEqual(ci.compose.respin, 1)
 
-        # Create for another product and check that respin incremented.
+        # Create for another product and check that respin resets back to 0.
         self.ci.compose.respin = 0
         self.ci.release.name = "Dummy Product"
         self.ci.release.short = "DP"
@@ -160,8 +160,17 @@ class TestComposeModel(ModelsBaseTest):
         db.session.expire_all()
         composes = db.session.query(Compose).all()
         self.assertEqual(len(composes), 3)
-        self.assertEqual(compose.respin, 2)
-        self.assertEqual(ci.compose.respin, 2)
+        self.assertEqual(compose.respin, 0)
+        self.assertEqual(ci.compose.respin, 0)
+
+        # Next compose for the same release will be incremented again.
+        self.ci.compose.respin = 0
+        compose, ci = Compose.create(db.session, "odcs", self.ci)
+        db.session.expire_all()
+        composes = db.session.query(Compose).all()
+        self.assertEqual(len(composes), 4)
+        self.assertEqual(compose.respin, 1)
+        self.assertEqual(ci.compose.respin, 1)
 
         # Create compose with another date and check that respin not incremented.
         self.ci.compose.date = "20221123"
@@ -169,7 +178,7 @@ class TestComposeModel(ModelsBaseTest):
         compose, ci = Compose.create(db.session, "odcs", self.ci)
         db.session.expire_all()
         composes = db.session.query(Compose).all()
-        self.assertEqual(len(composes), 4)
+        self.assertEqual(len(composes), 5)
         self.assertEqual(compose.respin, 0)
         self.assertEqual(ci.compose.respin, 0)
 
