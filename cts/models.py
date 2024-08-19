@@ -155,6 +155,24 @@ untaggers = db.Table(
 )
 
 
+class TaggerGroups(CTSBase):
+    __tablename__ = "tagger_groups"
+    group = db.Column(db.String(200), nullable=False)
+    tag_id = db.Column(db.Integer, db.ForeignKey("tags.id"), nullable=False)
+    __table_args__ = (
+        db.PrimaryKeyConstraint("group", "tag_id", name="tagger_groups_pk"),
+    )
+
+
+class UntaggerGroups(CTSBase):
+    __tablename__ = "untagger_groups"
+    group = db.Column(db.String(200), nullable=False)
+    tag_id = db.Column(db.Integer, db.ForeignKey("tags.id"), nullable=False)
+    __table_args__ = (
+        db.PrimaryKeyConstraint("group", "tag_id", name="untagger_groups_pk"),
+    )
+
+
 class TagChange(CTSBase):
     __tablename__ = "tag_changes"
 
@@ -208,6 +226,10 @@ class Tag(CTSBase):
     taggers = db.relationship("User", secondary=taggers)
     # Users allowed to untag the compose with this tag.
     untaggers = db.relationship("User", secondary=untaggers)
+    # Groups allowed to tag the compose with this tag.
+    tagger_groups = db.relationship("TaggerGroups", cascade="all, delete-orphan")
+    # Groups allowed to untag the compose with this tag.
+    untagger_groups = db.relationship("UntaggerGroups", cascade="all, delete-orphan")
 
     changes = db.relationship("TagChange")
 
@@ -234,109 +256,185 @@ class Tag(CTSBase):
         except IndexError:
             return None
 
-    def add_tagger(self, logged_user, username, user_data=None):
+    def add_tagger(self, logged_user, username=None, group=None, user_data=None):
         """
-        Grant `username` permissions to tag the compose with this tag.
+        Grant `username` or `group` permissions to tag the compose with this tag.
 
         :param str logged_user: Username of the logged user.
         :param str username: Username to add permission to.
+        :param str group: Group to add permission to.
         :param str user_data: User data to add to TagChange record.
         :return bool: True if permissions granted, False if user does not exist.
         """
-        u = User.get_or_create(username)
+        if username:
+            u = User.get_or_create(username)
 
-        TagChange.create(
-            db.session,
-            self,
-            logged_user,
-            action="add_tagger",
-            user_data=user_data,
-            message='Tagger permission granted to user "%s".' % username,
-        )
-        self.taggers.append(u)
+            TagChange.create(
+                db.session,
+                self,
+                logged_user,
+                action="add_tagger",
+                user_data=user_data,
+                message='Tagger permission granted to user "%s".' % username,
+            )
+            self.taggers.append(u)
+
+        if group:
+            tg = TaggerGroups.query.filter_by(group=group, tag_id=self.id).first()
+            if tg:
+                # Permission granted already.
+                return True
+
+            TagChange.create(
+                db.session,
+                self,
+                logged_user,
+                action="add_tagger",
+                user_data=user_data,
+                message='Tagger permission granted to group "%s".' % group,
+            )
+            self.tagger_groups.append(TaggerGroups(group=group))
 
         return True
 
-    def remove_tagger(self, logged_user, username, user_data=None):
+    def remove_tagger(self, logged_user, username=None, group=None, user_data=None):
         """
-        Revoke `username` permissions to tag the compose with this tag.
+        Revoke `username` or `group` permissions to tag the compose with this tag.
 
         :param str logged_user: Username of the logged user.
         :param str username: Username to remove permission from.
+        :param str group: Group to remove permission from.
         :param str user_data: User data to add to TagChange record.
         :return bool: True if permissions revoked, False if user does not exist.
         """
-        u = User.find_user_by_name(username)
-        if not u:
-            return False
+        if username:
+            u = User.find_user_by_name(username)
+            if not u:
+                return False
 
-        try:
-            self.taggers.remove(u)
-        except ValueError:
-            # User is not there, so return True.
-            return True
+            try:
+                self.taggers.remove(u)
+            except ValueError:
+                # User is not there, so return True.
+                return True
 
-        TagChange.create(
-            db.session,
-            self,
-            logged_user,
-            action="remove_tagger",
-            user_data=user_data,
-            message='Tagger permission removed from user "%s".' % username,
-        )
+            TagChange.create(
+                db.session,
+                self,
+                logged_user,
+                action="remove_tagger",
+                user_data=user_data,
+                message='Tagger permission removed from user "%s".' % username,
+            )
+
+        if group:
+            tg = TaggerGroups.query.filter_by(group=group, tag_id=self.id).first()
+            try:
+                self.tagger_groups.remove(tg)
+            except ValueError:
+                # Group is not there, so return True.
+                return True
+
+            TagChange.create(
+                db.session,
+                self,
+                logged_user,
+                action="remove_tagger",
+                user_data=user_data,
+                message='Tagger permission removed from group "%s".' % group,
+            )
 
         return True
 
-    def add_untagger(self, logged_user, username, user_data=None):
+    def add_untagger(self, logged_user, username=None, group=None, user_data=None):
         """
-        Grant `username` permissions to untag the compose with this tag.
+        Grant `username` or `group` permissions to untag the compose with this tag.
 
         :param str logged_user: Username of the logged user.
         :param str username: Username to add permission to.
+        :param str group: Group to add permission to.
         :param str user_data: User data to add to TagChange record.
         :return bool: True if permissions granted, False if user does not exist.
         """
-        u = User.get_or_create(username)
+        if username:
+            u = User.get_or_create(username)
 
-        TagChange.create(
-            db.session,
-            self,
-            logged_user,
-            action="add_untagger",
-            user_data=user_data,
-            message='Untagger permission granted to user "%s".' % username,
-        )
+            TagChange.create(
+                db.session,
+                self,
+                logged_user,
+                action="add_untagger",
+                user_data=user_data,
+                message='Untagger permission granted to user "%s".' % username,
+            )
 
-        self.untaggers.append(u)
+            self.untaggers.append(u)
+
+        if group:
+            tg = UntaggerGroups.query.filter_by(group=group, tag_id=self.id).first()
+            if tg:
+                # Permission granted already.
+                return True
+
+            TagChange.create(
+                db.session,
+                self,
+                logged_user,
+                action="add_untagger",
+                user_data=user_data,
+                message='Untagger permission granted to group "%s".' % group,
+            )
+
+            self.untagger_groups.append(UntaggerGroups(group=group))
+
         return True
 
-    def remove_untagger(self, logged_user, username, user_data=None):
+    def remove_untagger(self, logged_user, username=None, group=None, user_data=None):
         """
-        Revoke `username` permissions to untag the compose with this tag.
+        Revoke `username` or `group` permissions to untag the compose with this tag.
 
         :param str logged_user: Username of the logged user.
         :param str username: Username to remove permission from.
+        :param str group: Group to remove permission from.
         :param str user_data: User data to add to TagChange record.
         :return bool: True if permissions revoked, False if user does not exist.
         """
-        u = User.find_user_by_name(username)
-        if not u:
-            return False
+        if username:
+            u = User.find_user_by_name(username)
+            if not u:
+                return False
 
-        try:
-            self.untaggers.remove(u)
-        except ValueError:
-            # User is not there, so return True.
-            return True
+            try:
+                self.untaggers.remove(u)
+            except ValueError:
+                # User is not there, so return True.
+                return True
 
-        TagChange.create(
-            db.session,
-            self,
-            logged_user,
-            action="remove_untagger",
-            user_data=user_data,
-            message='Untagger permission removed from user "%s".' % username,
-        )
+            TagChange.create(
+                db.session,
+                self,
+                logged_user,
+                action="remove_untagger",
+                user_data=user_data,
+                message='Untagger permission removed from user "%s".' % username,
+            )
+
+        if group:
+            tg = UntaggerGroups.query.filter_by(group=group, tag_id=self.id).first()
+            try:
+                self.untagger_groups.remove(tg)
+            except ValueError:
+                # Group is not there, so return True.
+                return True
+
+            TagChange.create(
+                db.session,
+                self,
+                logged_user,
+                action="remove_untagger",
+                user_data=user_data,
+                message='Untagger permission removed from group "%s".' % group,
+            )
 
         return True
 
@@ -348,6 +446,8 @@ class Tag(CTSBase):
             "documentation": self.documentation,
             "taggers": [u.username for u in self.taggers],
             "untaggers": [u.username for u in self.untaggers],
+            "tagger_groups": [g.group for g in self.tagger_groups],
+            "untagger_groups": [g.group for g in self.untagger_groups],
         }
 
 

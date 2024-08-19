@@ -139,6 +139,8 @@ def query_ldap_groups(uid):
     """Query user's ldap groups.
 
     :param str uid: username.
+    :return: List of group names.
+    :rtype: List[str].
     """
 
     client = ldap.initialize(conf.auth_ldap_server)

@@ -38,7 +38,13 @@ from sqlalchemy.exc import IntegrityError
 from cts import app, conf, version, db
 from cts.errors import NotFound, Forbidden
 from cts.models import Compose, Tag
-from cts.api_utils import pagination_metadata, filter_composes, filter_tags
+from cts.api_utils import (
+    pagination_metadata,
+    filter_composes,
+    filter_tags,
+    is_tagger,
+    is_untagger,
+)
 from cts.auth import requires_role, require_scopes, require_oidc_scope, has_role
 from cts.metrics import registry
 
@@ -151,6 +157,8 @@ class TagSchema(Schema):
     name = fields.String()
     taggers = fields.List(fields.String())
     untaggers = fields.List(fields.String())
+    tagger_groups = fields.List(fields.String())
+    untagger_groups = fields.List(fields.String())
 
 
 class TagListSchema(Schema):
@@ -575,16 +583,16 @@ class ComposeDetailAPI(MethodView):
                 raise ValueError('Tag "%s" does not exist' % tag_name)
 
             if action == "tag":
-                if g.user not in tag.taggers and not is_admin:
+                if not is_tagger(g.user, g.groups, tag) and not is_admin:
                     raise Forbidden(
                         'User "%s" does not have "taggers" permission for tag '
                         '"%s".' % (g.user.username, tag_name)
                     )
                 compose.tag(g.user.username, tag_name, user_data)
             else:
-                if g.user not in tag.untaggers and not is_admin:
+                if not is_untagger(g.user, g.groups, tag) and not is_admin:
                     raise Forbidden(
-                        'User "%s" does not have "taggers" permission for tag '
+                        'User "%s" does not have "untaggers" permission for tag '
                         '"%s".' % (g.user.username, tag_name)
                     )
                 compose.untag(g.user.username, tag_name, user_data)
@@ -901,15 +909,18 @@ class TagDetailAPI(MethodView):
                     description: |
                       Edit action. One of:
 
-                      - ``add_tagger`` - Grant ``tagger`` permission to ``username``.
-                      - ``remove_tagger`` - Remove ``tagger`` permission from ``username``.
-                      - ``add_untagger`` - Grant ``untagger`` permission to ``username``.
-                      - ``remove_untagger`` - Remove ``untagger`` permission from ``username``.
+                      - ``add_tagger`` - Grant ``tagger`` permission to ``username`` or ``group``.
+                      - ``remove_tagger`` - Remove ``tagger`` permission from ``username`` or ``group``.
+                      - ``add_untagger`` - Grant ``untagger`` permission to ``username`` or ``group``.
+                      - ``remove_untagger`` - Remove ``untagger`` permission from ``username`` or ``group``.
 
                       If not set, do not edit taggers/untaggers.
                   username:
                     type: string
                     description: Username of tagger/untagger.
+                  group:
+                    type: string
+                    description: Group name of tagger/untagger.
                   user_data:
                     type: string
                     description: |
@@ -968,10 +979,13 @@ class TagDetailAPI(MethodView):
             ]:
                 raise ValueError("Unknown action.")
             username = data.get("username", None)
-            if not username:
-                raise ValueError('"username" is not defined.')
+            group = data.get("group", None)
+            if not username and not group:
+                raise ValueError('Either "username" or "group" should be defined.')
             user_data = data.get("user_data", None)
-            r = getattr(t, action)(g.user.username, username, user_data)
+            r = getattr(t, action)(
+                g.user.username, username=username, group=group, user_data=user_data
+            )
             if not r:
                 raise ValueError("User does not exist")
 

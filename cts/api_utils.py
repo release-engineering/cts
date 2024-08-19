@@ -235,3 +235,56 @@ def filter_tags(flask_request):
     page = flask_request.args.get("page", 1, type=int)
     per_page = flask_request.args.get("per_page", 10, type=int)
     return query.paginate(page, per_page, False)
+
+
+def has_required_group(user_groups, required_groups):
+    """Check if user in any of the required groups.
+
+    :param list user_groups: Groups of the user.
+    :param list required_groups: Required groups.
+    :return: True or False.
+    :rtype: Boolean.
+    """
+    for grp in user_groups:
+        if grp in required_groups:
+            return True
+
+    return False
+
+
+def is_tagger(user, user_groups, tag):
+    """Check if `user` has tagger permission of `tag`.
+
+    :param cts.models.User user: User instance.
+    :param list user_groups: Groups of the user.
+    :param cts.models.Tag tag: Tag instance.
+    :return: True or False.
+    :rtype: Boolean.
+    """
+    if user in tag.taggers:
+        return True
+
+    if tag.tagger_groups:
+        tagger_groups = [tg.group for tg in tag.tagger_groups]
+        return has_required_group(user_groups, tagger_groups)
+
+    return False
+
+
+def is_untagger(user, user_groups, tag):
+    """Check if `user` has untagger permission of `tag`.
+
+    :param cts.models.User user: User instance.
+    :param list user_groups: Groups of the user.
+    :param cts.models.Tag tag: Tag instance.
+    :return: True or False.
+    :rtype: Boolean.
+    """
+    if user in tag.untaggers:
+        return True
+
+    if tag.untagger_groups:
+        untagger_groups = [tg.group for tg in tag.untagger_groups]
+        return has_required_group(user_groups, untagger_groups)
+
+    return False

@@ -477,7 +477,9 @@ class TestViews(ViewBaseTest):
                     "id": 1,
                     "name": "periodic",
                     "taggers": [],
+                    "tagger_groups": [],
                     "untaggers": [],
+                    "untagger_groups": [],
                 }
             ],
             "meta": {
@@ -503,7 +505,9 @@ class TestViews(ViewBaseTest):
             "id": 1,
             "name": "periodic",
             "taggers": [],
+            "tagger_groups": [],
             "untaggers": [],
+            "untagger_groups": [],
         }
         self.assertEqual(data, expected_data)
 
@@ -517,7 +521,9 @@ class TestViews(ViewBaseTest):
             "id": 1,
             "name": "periodic",
             "taggers": [],
+            "tagger_groups": [],
             "untaggers": [],
+            "untagger_groups": [],
         }
         self.assertEqual(data, expected_data)
 
@@ -538,7 +544,9 @@ class TestViews(ViewBaseTest):
             "id": 1,
             "name": "periodic",
             "taggers": [],
+            "tagger_groups": [],
             "untaggers": [],
+            "untagger_groups": [],
         }
         self.assertEqual(data, expected_data)
 
@@ -606,7 +614,9 @@ class TestViews(ViewBaseTest):
             "id": 1,
             "name": "periodic-update",
             "taggers": [],
+            "tagger_groups": [],
             "untaggers": [],
+            "untagger_groups": [],
         }
         self.assertEqual(data, expected_data)
 
@@ -662,7 +672,9 @@ class TestViews(ViewBaseTest):
                 "id": 1,
                 "name": "periodic",
                 "taggers": expected_list if "untagger" not in action else [],
+                "tagger_groups": [],
                 "untaggers": expected_list if "untagger" in action else [],
+                "untagger_groups": [],
             }
             self.assertEqual(data, expected_data)
 
@@ -680,7 +692,9 @@ class TestViews(ViewBaseTest):
             "id": 1,
             "name": "periodic",
             "taggers": ["not-existing"],
+            "tagger_groups": [],
             "untaggers": [],
+            "untagger_groups": [],
         }
         self.assertEqual(data, expected_data)
 

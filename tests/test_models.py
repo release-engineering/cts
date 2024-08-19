@@ -215,25 +215,43 @@ class TestTagModel(ModelsBaseTest):
         self.assertEqual(t.taggers, [self.me, self.you])
 
         # Remove "me".
-        r = t.remove_tagger("admin", "me", "Ticket #123")
+        r = t.remove_tagger("admin", username="me", user_data="Ticket #123")
         self.assertEqual(r, True)
         self.assertEqual(t.taggers, [self.you])
 
         # Remove "me" again to test it does not break.
-        r = t.remove_tagger("admin", "me")
+        r = t.remove_tagger("admin", username="me")
         self.assertEqual(r, True)
         self.assertEqual(t.taggers, [self.you])
 
         # Remove "me" again to test it does not break.
-        r = t.remove_tagger("admin", "me")
+        r = t.remove_tagger("admin", username="me")
         self.assertEqual(r, True)
         self.assertEqual(t.taggers, [self.you])
 
         # Add non-existing.
-        r = t.add_tagger("admin", "non-existing")
+        r = t.add_tagger("admin", username="non-existing")
         self.assertEqual(r, True)
         n = User.find_user_by_name("non-existing")
         self.assertEqual(t.taggers, [self.you, n])
+
+        # Add group tagger
+        r = t.add_tagger("admin", group="g1", user_data="Ticket #234")
+        db.session.commit()
+        self.assertEqual(r, True)
+        self.assertEqual(len(t.tagger_groups), 1)
+        self.assertEqual(t.tagger_groups[0].group, "g1")
+
+        # Remove group "g1".
+        r = t.remove_tagger("admin", group="g1", user_data="Ticket #345")
+        db.session.commit()
+        self.assertEqual(r, True)
+        self.assertEqual(t.tagger_groups, [])
+
+        # Remove group "g1" again to test it does not break.
+        r = t.remove_tagger("admin", group="g1")
+        self.assertEqual(r, True)
+        self.assertEqual(t.tagger_groups, [])
 
         expected_tag_changes = [
             {
@@ -278,6 +296,20 @@ class TestTagModel(ModelsBaseTest):
                 "user_data": None,
                 "time": ANY,
             },
+            {
+                "action": "add_tagger",
+                "message": 'Tagger permission granted to group "g1".',
+                "user": "admin",
+                "user_data": "Ticket #234",
+                "time": ANY,
+            },
+            {
+                "action": "remove_tagger",
+                "message": 'Tagger permission removed from group "g1".',
+                "user": "admin",
+                "user_data": "Ticket #345",
+                "time": ANY,
+            },
         ]
         tag_changes = [change.json() for change in t.changes]
         self.assertEqual(tag_changes, expected_tag_changes)
@@ -286,30 +318,48 @@ class TestTagModel(ModelsBaseTest):
         t = Tag.get_by_name("periodic")
 
         # Add "me"
-        r = t.add_untagger("admin", "you")
+        r = t.add_untagger("admin", username="you")
         self.assertEqual(r, True)
         self.assertEqual(t.untaggers, [self.me, self.you])
 
         # Remove "me".
-        r = t.remove_untagger("admin", "me")
+        r = t.remove_untagger("admin", username="me")
         self.assertEqual(r, True)
         self.assertEqual(t.untaggers, [self.you])
 
         # Remove "me" again to test it does not break.
-        r = t.remove_untagger("admin", "me")
+        r = t.remove_untagger("admin", username="me")
         self.assertEqual(r, True)
         self.assertEqual(t.untaggers, [self.you])
 
         # Remove "me" again to test it does not break.
-        r = t.remove_untagger("admin", "me")
+        r = t.remove_untagger("admin", username="me")
         self.assertEqual(r, True)
         self.assertEqual(t.untaggers, [self.you])
 
         # Add non-existing.
-        r = t.add_untagger("admin", "non-existing")
+        r = t.add_untagger("admin", username="non-existing")
         self.assertEqual(r, True)
         n = User.find_user_by_name("non-existing")
         self.assertEqual(t.untaggers, [self.you, n])
+
+        # Add group untagger
+        r = t.add_untagger("admin", group="g1", user_data="Ticket #234")
+        db.session.commit()
+        self.assertEqual(r, True)
+        self.assertEqual(len(t.untagger_groups), 1)
+        self.assertEqual(t.untagger_groups[0].group, "g1")
+
+        # Remove group "g1".
+        r = t.remove_untagger("admin", group="g1", user_data="Ticket #345")
+        db.session.commit()
+        self.assertEqual(r, True)
+        self.assertEqual(t.untagger_groups, [])
+
+        # Remove group "g1" again to test it does not break.
+        r = t.remove_untagger("admin", group="g1")
+        self.assertEqual(r, True)
+        self.assertEqual(t.untagger_groups, [])
 
     def test_json(self):
         expected_json = {
@@ -318,7 +368,9 @@ class TestTagModel(ModelsBaseTest):
             "id": 1,
             "name": "periodic",
             "taggers": ["me", "you"],
+            "tagger_groups": [],
             "untaggers": ["me"],
+            "untagger_groups": [],
         }
         self.assertEqual(Tag.get_by_name("periodic").json(), expected_json)
 
