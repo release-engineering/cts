@@ -23,7 +23,8 @@
 import json
 import unittest
 import flask
-from mock import patch, ANY, call, Mock
+
+from unittest.mock import patch, ANY, call, Mock
 
 from cts import conf
 from cts import app, db

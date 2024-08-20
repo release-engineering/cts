@@ -24,10 +24,9 @@ import contextlib
 import json
 import unittest
 
-
 import flask
 
-from mock import patch
+from unittest.mock import patch
 
 import cts.auth
 from cts import conf, db, app, login_manager, version

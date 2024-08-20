@@ -20,7 +20,7 @@
 #
 # Written by Jan Kaluza <jkaluza@redhat.com>
 
-from mock import ANY
+from unittest.mock import ANY
 
 from cts import db
 from cts.models import User, Compose, Tag

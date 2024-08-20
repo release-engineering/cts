@@ -30,7 +30,7 @@ from cts.events import cache_composes_if_state_changed
 from cts.events import start_to_publish_messages
 
 from flask_sqlalchemy import SignallingSession
-from mock import patch
+from unittest.mock import patch
 
 
 class AnyStringWith(str):
