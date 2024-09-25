@@ -11,10 +11,14 @@ ARG cacert_url=undefined
 ARG build_date=unknown
 
 LABEL \
-    name="CTS" \
-    maintainer="CTS developers" \
+    build-date=$build_date \
+    description="Compose Tracking Service" \
+    distribution-scope="public" \
+    io.k8s.description="Compose Tracking Service" \
     license="MIT" \
-    build-date=$build_date
+    maintainer="CTS developers" \
+    name="CTS" \
+    url="https://github.com/release-engineering/cts"
 
 WORKDIR /src
 
