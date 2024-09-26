@@ -1,6 +1,6 @@
 python-fedora
 sqlalchemy<2.0  # For Flask 2.2.3
-Flask==2.2.3  # Pin version for Flask-Login
+Flask==2.2.5  # Pin version for Flask-Login
 Flask-Migrate
 Flask-SQLAlchemy<3.0  # For sqlalchemy and Flask
 Flask-Login==0.6.2
@@ -8,7 +8,7 @@ requests
 productmd
 python-ldap
 prometheus_client
-Werkzeug==2.2.3  # Flask-Login is not compatible with newer version
+Werkzeug==3.0.3  # Flask-Login is not compatible with newer version
 apispec==6.3.0  # Pin version to install from pypi
 apispec-webframeworks==0.5.2  # Pin version to install from pypi
 marshmallow>=3.18.0
