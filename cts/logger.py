@@ -63,10 +63,6 @@ def str_to_log_level(level):
     return levels[level]
 
 
-def supported_log_backends():
-    return ("console", "journal", "file")
-
-
 def init_logging(conf):
     """
     Initializes logging according to configuration file.
@@ -74,22 +70,12 @@ def init_logging(conf):
     log_format = "%(asctime)s - %(threadName)s - %(name)s - %(levelname)s - %(message)s"
     log_backend = conf.log_backend
 
-    if not log_backend or len(log_backend) == 0 or log_backend == "console":
-        logging.basicConfig(level=conf.log_level, format=log_format)
-        log = logging.getLogger()
-        log.setLevel(conf.log_level)
-    elif log_backend == "journal":
-        logging.basicConfig(level=conf.log_level, format=log_format)
-        try:
-            from systemd import journal
-        except Exception:
-            raise ValueError("systemd.journal module is not installed")
-
-        log = logging.getLogger()
-        log.propagate = False
-        log.addHandler(journal.JournalHandler())
-    else:
+    if conf.log_file:
         logging.basicConfig(
             filename=conf.log_file, level=conf.log_level, format=log_format
         )
         log = logging.getLogger()
+    else:
+        logging.basicConfig(level=conf.log_level, format=log_format)
+        log = logging.getLogger()
+        log.setLevel(conf.log_level)
