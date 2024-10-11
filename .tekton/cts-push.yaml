@@ -21,6 +21,8 @@ spec:
     value: '{{source_url}}'
   - name: revision
     value: '{{revision}}'
+  - name: depth
+    value: 0
   - name: output-image
     value: quay.io/redhat-user-workloads/team-sp-rhelcmp-tenant/cts/cts:{{revision}}
   - name: dockerfile
@@ -163,6 +165,8 @@ spec:
         value: $(params.git-url)
       - name: revision
         value: $(params.revision)
+      - name: depth
+        value: $(params.depth)
       runAfter:
       - init
       taskRef:
