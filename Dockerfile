@@ -1,17 +1,9 @@
-FROM fedora:38 AS builder
-WORKDIR /src
-RUN dnf -y install git
-COPY . .
-RUN sed -i -e "s/version=.*/version='$(./get-version.sh)',/" setup.py
-
-
 FROM fedora:38
 
 ARG cacert_url=undefined
-ARG build_date=unknown
+ARG short_commit=unknown
 
 LABEL \
-    build-date=$build_date \
     description="Compose Tracking Service" \
     distribution-scope="public" \
     io.k8s.description="Compose Tracking Service" \
@@ -67,7 +59,10 @@ RUN if [ "$cacert_url" != "undefined" ]; then \
         && update-ca-trust extract; \
     fi
 
-COPY --from=builder /src .
+COPY . .
+
+# Update version with build metadata https://semver.org/#spec-item-10
+RUN sed -i -E "s/(version=\")([^\"]+)/\1\2+$(date -u +'%Y%m%dT%H%M%S').git.$short_commit/" setup.py
 
 RUN mkdir -p /usr/share/cts && cp contrib/cts.wsgi /usr/share/cts/
 
