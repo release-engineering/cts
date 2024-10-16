@@ -68,7 +68,6 @@ def init_logging(conf):
     Initializes logging according to configuration file.
     """
     log_format = "%(asctime)s - %(threadName)s - %(name)s - %(levelname)s - %(message)s"
-    log_backend = conf.log_backend
 
     if conf.log_file:
         logging.basicConfig(
