@@ -210,7 +210,7 @@ def filter_composes(flask_request):
 
     page = flask_request.args.get("page", 1, type=int)
     per_page = flask_request.args.get("per_page", 10, type=int)
-    return query.paginate(page, per_page, False)
+    return query.paginate(page=page, per_page=per_page, error_out=False)
 
 
 def filter_tags(flask_request):
@@ -234,7 +234,7 @@ def filter_tags(flask_request):
 
     page = flask_request.args.get("page", 1, type=int)
     per_page = flask_request.args.get("per_page", 10, type=int)
-    return query.paginate(page, per_page, False)
+    return query.paginate(page=page, per_page=per_page, error_out=False)
 
 
 def has_required_group(user_groups, required_groups):
