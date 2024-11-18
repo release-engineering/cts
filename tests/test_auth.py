@@ -229,13 +229,15 @@ class TestLoadOpenIDCUserFromRequest(ModelsBaseTest):
             self.assertEqual("new_user", flask.g.user.username)
             self.assertEqual(sorted(["admin", "tester"]), sorted(flask.g.groups))
 
+    @patch("cts.auth.query_ldap_groups")
     @patch("cts.auth.requests.get")
-    def test_return_existing_user(self, get):
+    def test_return_existing_user(self, get, mock_query_ldap_groups):
         get.return_value.status_code = 200
         get.return_value.json.return_value = {
             "groups": ["testers", "admins"],
             "name": self.user.username,
         }
+        mock_query_ldap_groups.return_value = ["othergroup"]
 
         environ_base = {
             "REMOTE_USER": self.user.username,
@@ -257,7 +259,9 @@ class TestLoadOpenIDCUserFromRequest(ModelsBaseTest):
 
             # Ensure existing user is set in g
             self.assertEqual(self.user.id, flask.g.user.id)
-            self.assertEqual(["admins", "testers"], sorted(flask.g.groups))
+            self.assertEqual(
+                ["admins", "othergroup", "testers"], sorted(flask.g.groups)
+            )
 
     @patch("cts.auth.requests.get")
     def test_user_info_failure(self, get):

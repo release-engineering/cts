@@ -81,17 +81,7 @@ def load_krb_user_from_request(request):
     if not user:
         user = User.create_user(username=username)
 
-    try:
-        groups = query_ldap_groups(username)
-    except ldap.SERVER_DOWN as e:
-        log.error(
-            "Cannot query groups of %s from LDAP. Error: %s",
-            username,
-            e.args[0]["desc"],
-        )
-        groups = []
-
-    g.groups = groups
+    g.groups = query_ldap_groups(username)
     g.user = user
     return user
 
@@ -145,15 +135,23 @@ def query_ldap_groups(uid):
 
     client = ldap.initialize(conf.auth_ldap_server)
     groups = []
-    for ldap_base, ldap_filter in conf.auth_ldap_groups:
-        groups.extend(
-            client.search_s(
-                ldap_base,
-                ldap.SCOPE_ONELEVEL,
-                attrlist=["cn"],
-                filterstr=ldap_filter.format(uid),
+    try:
+        for ldap_base, ldap_filter in conf.auth_ldap_groups:
+            groups.extend(
+                client.search_s(
+                    ldap_base,
+                    ldap.SCOPE_ONELEVEL,
+                    attrlist=["cn"],
+                    filterstr=ldap_filter.format(uid),
+                )
             )
+    except ldap.SERVER_DOWN as e:
+        log.error(
+            "Cannot query groups of %s from LDAP. Error: %s",
+            uid,
+            e.args[0]["desc"],
         )
+        return groups
 
     group_names = [g.decode() for g in list(chain(*[info["cn"] for _, info in groups]))]
     return group_names
@@ -184,6 +182,7 @@ def load_openidc_user(request):
         user = User.create_user(username=username)
 
     g.groups = user_info.get("groups", [])
+    g.groups.extend(query_ldap_groups(username))
     g.user = user
     g.oidc_scopes = scope.split(" ")
     return user
