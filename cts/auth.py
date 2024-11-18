@@ -155,7 +155,7 @@ def query_ldap_groups(uid):
             )
         )
 
-    group_names = list(chain(*[info["cn"] for _, info in groups]))
+    group_names = [g.decode() for g in list(chain(*[info["cn"] for _, info in groups]))]
     return group_names
 
 

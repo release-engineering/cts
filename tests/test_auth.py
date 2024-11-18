@@ -351,17 +351,17 @@ class TestQueryLdapGroups(unittest.TestCase):
             [
                 (
                     "cn=ctsdev,ou=Groups,dc=example,dc=com",
-                    {"cn": ["ctsdev"]},
+                    {"cn": [b"ctsdev"]},
                 ),
                 (
                     "cn=devel,ou=Groups,dc=example,dc=com",
-                    {"cn": ["devel"]},
+                    {"cn": [b"devel"]},
                 ),
             ],
             [
                 (
                     "cn=ctsadmin,ou=adhoc,ou=managedGroups,dc=example,dc=com",
-                    {"cn": ["ctsadmin"]},
+                    {"cn": [b"ctsadmin"]},
                 )
             ],
         ]
