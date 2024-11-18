@@ -1166,9 +1166,9 @@ class UserInfoAPI(MethodView):
         is_tagger_of = []
         is_untagger_of = []
         for t in Tag.query.all():
-            if in_edit_compose_scope and (is_admin or g.user in t.taggers):
+            if in_edit_compose_scope and (is_admin or is_tagger(g.user, g.groups, t)):
                 is_tagger_of.append(t.name)
-            if in_edit_compose_scope and (is_admin or g.user in t.untaggers):
+            if in_edit_compose_scope and (is_admin or is_untagger(g.user, g.groups, t)):
                 is_untagger_of.append(t.name)
 
         data = {
