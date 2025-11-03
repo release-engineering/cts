@@ -90,7 +90,11 @@ def cache_composes_if_state_changed(session, flush_context):
 
 
 def start_to_publish_messages(session):
-    """Publish messages after data is committed to database successfully"""
+    """
+    Publish messages after data is committed to database successfully.
+
+    Messages are published asynchronously in a background thread.
+    """
     import cts.messaging as messaging
 
     with _cache_lock:
@@ -99,8 +103,6 @@ def start_to_publish_messages(session):
             msgs += compose_msgs
         log.debug("Sending messages: %s", msgs)
         if msgs:
-            try:
-                messaging.publish(msgs)
-            except Exception:
-                log.exception("Cannot publish message to bus.")
+            # Publish asynchronously - returns immediately
+            messaging.publish(msgs)
         _cached_composes.clear()
