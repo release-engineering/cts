@@ -1,0 +1,27 @@
+apiVersion: appstudio.redhat.com/v1beta1
+kind: IntegrationTestScenario
+metadata:
+  name: cts-integration-test
+  namespace: team-sp-rhelcmp-tenant
+  labels:
+    test.appstudio.openshift.io/optional: "false"
+spec:
+  application: cts
+  resolverRef:
+    resolver: git
+    params:
+    - name: url
+      value: https://github.com/release-engineering/cts
+    - name: revision
+      value: main
+    - name: pathInRepo
+      value: .tekton/integration-test-eaas.yaml
+  contexts:
+  - name: service-validation
+    description: |
+      Tests the CTS container image by:
+      - Provisioning ephemeral namespace using EaaS
+      - Deploying PostgreSQL database
+      - Deploying CTS service with the built image
+      - Validating API endpoints respond correctly
+      - Testing database connectivity and migrations
