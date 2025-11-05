@@ -1,3 +1,4 @@
+import os
 from os import path
 
 
@@ -84,6 +85,12 @@ class DevConfiguration(BaseConfiguration):
     LOG_LEVEL = "debug"
     AUTH_BACKEND = "noauth"
     AUTH_OPENIDC_USERINFO_URI = "https://iddev.fedorainfracloud.org/openidc/UserInfo"
+
+    # Allow overriding database URI via environment variable for integration testing
+    # and docker-compose setups
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        "SQLALCHEMY_DATABASE_URI", BaseConfiguration.SQLALCHEMY_DATABASE_URI
+    )
 
 
 class TestConfiguration(BaseConfiguration):

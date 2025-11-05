@@ -1,0 +1,476 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: cts-integration-test-eaas
+spec:
+  description: |
+    Integration test for CTS using Konflux EaaS (Environment as a Service).
+    Clones the repository, provisions an ephemeral namespace, and deploys
+    CTS with PostgreSQL for testing.
+
+  params:
+  - name: SNAPSHOT
+    description: JSON string representing the snapshot under test
+    type: string
+
+  tasks:
+  - name: parse-snapshot
+    taskSpec:
+      params:
+      - name: SNAPSHOT
+        type: string
+      results:
+      - name: image-url
+        description: Container image URL to test
+      - name: git-url
+        description: Git repository URL
+      - name: git-revision
+        description: Git revision (commit SHA)
+      steps:
+      - name: extract-metadata
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "Parsing snapshot..."
+          SNAPSHOT='$(params.SNAPSHOT)'
+
+          # Extract image URL
+          IMAGE_URL=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .containerImage')
+          echo -n "$IMAGE_URL" | tee $(results.image-url.path)
+          echo ""
+          echo "Image to test: $IMAGE_URL"
+
+          # Extract git repository URL
+          GIT_URL=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .source.git.url')
+          echo -n "$GIT_URL" | tee $(results.git-url.path)
+          echo ""
+          echo "Git URL: $GIT_URL"
+
+          # Extract git revision
+          GIT_REVISION=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .source.git.revision')
+          echo -n "$GIT_REVISION" | tee $(results.git-revision.path)
+          echo ""
+          echo "Git revision: $GIT_REVISION"
+    params:
+    - name: SNAPSHOT
+      value: $(params.SNAPSHOT)
+
+  - name: provision-environment
+    runAfter:
+    - parse-snapshot
+    taskRef:
+      params:
+      - name: name
+        value: eaas-provision-space
+      - name: bundle
+        value: quay.io/konflux-ci/tekton-catalog/task-eaas-provision-space:0.1
+      - name: kind
+        value: task
+      resolver: bundles
+    params:
+    - name: ownerKind
+      value: PipelineRun
+    - name: ownerName
+      value: $(context.pipelineRun.name)
+    - name: ownerUid
+      value: $(context.pipelineRun.uid)
+
+  - name: deploy-database
+    runAfter:
+    - provision-environment
+    taskSpec:
+      params:
+      - name: kubeconfig-secret
+        type: string
+      steps:
+      - name: create-database
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          # Get kubeconfig from secret
+          KUBECONFIG=/tmp/kubeconfig
+          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+          export KUBECONFIG
+
+          echo "=========================================="
+          echo "Deploying PostgreSQL Database"
+          echo "=========================================="
+
+          # Deploy PostgreSQL
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: cts-db
+            labels:
+              app: cts-db
+          spec:
+            ports:
+            - port: 5432
+              targetPort: 5432
+            selector:
+              app: cts-db
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: cts-db
+            labels:
+              app: cts-db
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: cts-db
+            template:
+              metadata:
+                labels:
+                  app: cts-db
+              spec:
+                containers:
+                - name: postgresql
+                  image: postgres:13-alpine
+                  env:
+                  - name: POSTGRES_DB
+                    value: cts
+                  - name: POSTGRES_USER
+                    value: cts
+                  - name: POSTGRES_PASSWORD
+                    value: cts-test
+                  - name: PGDATA
+                    value: /var/lib/postgresql/data/pgdata
+                  ports:
+                  - containerPort: 5432
+                  resources:
+                    requests:
+                      memory: "128Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "256Mi"
+                      cpu: "500m"
+                  readinessProbe:
+                    exec:
+                      command:
+                      - pg_isready
+                      - -U
+                      - cts
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                    timeoutSeconds: 5
+                    failureThreshold: 6
+                  volumeMounts:
+                  - name: postgres-data
+                    mountPath: /var/lib/postgresql/data
+                volumes:
+                - name: postgres-data
+                  emptyDir: {}
+          EOF
+
+          echo "Waiting for database to be ready..."
+
+          # Check pod status first
+          echo ""
+          echo "Pod status:"
+          kubectl get pods -l app=cts-db
+
+          echo ""
+          echo "Deployment status:"
+          kubectl get deployment cts-db
+
+          # Wait with more detailed output on failure
+          if ! kubectl wait --for=condition=available --timeout=180s deployment/cts-db; then
+            echo ""
+            echo "=========================================="
+            echo "Database deployment failed! Debug info:"
+            echo "=========================================="
+
+            echo ""
+            echo "Deployment details:"
+            kubectl describe deployment cts-db
+
+            echo ""
+            echo "Pod details:"
+            kubectl describe pod -l app=cts-db
+
+            echo ""
+            echo "Pod logs (if available):"
+            kubectl logs -l app=cts-db --tail=100 || echo "No logs available"
+
+            echo ""
+            echo "Events:"
+            kubectl get events --sort-by='.lastTimestamp'
+
+            exit 1
+          fi
+
+          echo "✓ Database is ready"
+    params:
+    - name: kubeconfig-secret
+      value: $(tasks.provision-environment.results.secretRef)
+
+  - name: deploy-cts
+    runAfter:
+    - deploy-database
+    taskSpec:
+      params:
+      - name: kubeconfig-secret
+        type: string
+      - name: image-url
+        type: string
+      steps:
+      - name: create-service
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          # Get kubeconfig from secret
+          KUBECONFIG=/tmp/kubeconfig
+          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+          export KUBECONFIG
+
+          IMAGE="$(params.image-url)"
+
+          echo "=========================================="
+          echo "Deploying CTS Service"
+          echo "=========================================="
+          echo "Image: $IMAGE"
+
+          # Deploy CTS
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: cts
+            labels:
+              app: cts
+          spec:
+            ports:
+            - port: 5005
+              targetPort: 5005
+              name: http
+            selector:
+              app: cts
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: cts
+            labels:
+              app: cts
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: cts
+            template:
+              metadata:
+                labels:
+                  app: cts
+              spec:
+                initContainers:
+                - name: run-migrations
+                  image: $IMAGE
+                  env:
+                  - name: CTS_DEVELOPER_ENV
+                    value: "1"
+                  - name: SQLALCHEMY_DATABASE_URI
+                    value: "postgresql://cts:cts-test@cts-db:5432/cts"
+                  command:
+                  - /bin/bash
+                  - -c
+                  - |
+                    set -e
+                    echo "Running database migrations..."
+                    cd /src
+                    cts-manager db upgrade
+                    echo "Migrations completed successfully"
+                containers:
+                - name: cts
+                  image: $IMAGE
+                  env:
+                  - name: CTS_DEVELOPER_ENV
+                    value: "1"
+                  - name: SQLALCHEMY_DATABASE_URI
+                    value: "postgresql://cts:cts-test@cts-db:5432/cts"
+                  ports:
+                  - containerPort: 5005
+                  resources:
+                    requests:
+                      memory: "256Mi"
+                      cpu: "200m"
+                    limits:
+                      memory: "512Mi"
+                      cpu: "1000m"
+                  readinessProbe:
+                    httpGet:
+                      path: /api/1/
+                      port: 5005
+                    initialDelaySeconds: 15
+                    periodSeconds: 5
+                    timeoutSeconds: 5
+                    failureThreshold: 12
+                  livenessProbe:
+                    httpGet:
+                      path: /api/1/
+                      port: 5005
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                    timeoutSeconds: 5
+          EOF
+
+          echo "Waiting for CTS service to be ready..."
+
+          # Check pod status first
+          echo ""
+          echo "Pod status:"
+          kubectl get pods -l app=cts
+
+          echo ""
+          echo "Deployment status:"
+          kubectl get deployment cts
+
+          # Wait with more detailed output on failure
+          if ! kubectl wait --for=condition=available --timeout=300s deployment/cts; then
+            echo ""
+            echo "=========================================="
+            echo "CTS deployment failed! Debug info:"
+            echo "=========================================="
+
+            echo ""
+            echo "Deployment details:"
+            kubectl describe deployment cts
+
+            echo ""
+            echo "Pod details:"
+            kubectl describe pod -l app=cts
+
+            echo ""
+            echo "CTS Pod logs (if available):"
+            kubectl logs -l app=cts --tail=100 || echo "No logs available"
+
+            echo ""
+            echo "Database pod status (for reference):"
+            kubectl get pod -l app=cts-db
+
+            echo ""
+            echo "Events:"
+            kubectl get events --sort-by='.lastTimestamp' | tail -30
+
+            exit 1
+          fi
+
+          echo ""
+          echo "✓ CTS service is ready"
+    params:
+    - name: kubeconfig-secret
+      value: $(tasks.provision-environment.results.secretRef)
+    - name: image-url
+      value: $(tasks.parse-snapshot.results.image-url)
+
+  - name: run-tests
+    runAfter:
+    - deploy-cts
+    taskSpec:
+      params:
+      - name: kubeconfig-secret
+        type: string
+      - name: git-url
+        type: string
+      - name: git-revision
+        type: string
+      results:
+      - name: test-result
+        description: Test execution result
+      steps:
+      - name: clone-repository
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          GIT_URL="$(params.git-url)"
+          GIT_REV="$(params.git-revision)"
+
+          echo "=========================================="
+          echo "Cloning Repository"
+          echo "=========================================="
+          echo "URL: $GIT_URL"
+          echo "Revision: $GIT_REV"
+          echo ""
+
+          # Shallow clone for faster cloning (only get the specific revision)
+          git clone --depth 1 "$GIT_URL" /workspace/cts-repo
+          cd /workspace/cts-repo
+          git fetch --depth 1 origin "$GIT_REV"
+          git checkout "$GIT_REV"
+
+          echo "✓ Repository cloned successfully"
+
+      - name: execute-tests
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "=========================================="
+          echo "Running Integration Tests"
+          echo "=========================================="
+
+          # Get kubeconfig
+          KUBECONFIG=/tmp/kubeconfig
+          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+          export KUBECONFIG
+
+          # Get the namespace and CTS pod
+          NAMESPACE=$(kubectl config view --minify -o jsonpath='{..namespace}')
+          echo "Ephemeral namespace: $NAMESPACE"
+
+          CTS_POD=$(kubectl get pod -l app=cts -n $NAMESPACE -o jsonpath='{.items[0].metadata.name}')
+          echo "CTS Pod: $CTS_POD"
+          echo ""
+
+          # Bootstrap pip and install pytest
+          python3 -m ensurepip --default-pip || dnf install -y python3-pip
+          python3 -m pip install --user pytest
+
+          # Run the tests using kubectl exec mode (with properly quoted URLs to handle & in query params)
+          # Temporarily disable exit-on-error to capture test result
+          set +e
+          KUBECTL_POD="$CTS_POD" python3 -m pytest /workspace/cts-repo/tests/test_integration_api.py -v -s -o addopts=""
+          TEST_RESULT=$?
+          set -e
+
+          if [ $TEST_RESULT -eq 0 ]; then
+            echo "passed" | tee $(results.test-result.path)
+            exit 0
+          else
+            echo "failed" | tee $(results.test-result.path)
+
+            # Show pod logs for debugging
+            echo ""
+            echo "=========================================="
+            echo "CTS Pod Logs (last 50 lines):"
+            echo "=========================================="
+
+            # kubeconfig is already set up above
+            CTS_POD=$(kubectl get pod -l app=cts -n $NAMESPACE -o jsonpath='{.items[0].metadata.name}')
+            kubectl logs $CTS_POD -n $NAMESPACE --tail=50 || true
+
+            exit 1
+          fi
+    params:
+    - name: kubeconfig-secret
+      value: $(tasks.provision-environment.results.secretRef)
+    - name: git-url
+      value: $(tasks.parse-snapshot.results.git-url)
+    - name: git-revision
+      value: $(tasks.parse-snapshot.results.git-revision)
+
+  results:
+  - name: TEST_OUTPUT
+    value: $(tasks.run-tests.results.test-result)
