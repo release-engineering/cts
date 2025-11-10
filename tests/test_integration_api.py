@@ -1,21 +1,16 @@
 """
 Integration tests for CTS API endpoints.
 
-Run with pytest in one of two modes:
+Run with pytest by setting the CTS_URL environment variable:
 
-1. Direct HTTP mode (local testing):
-   CTS_URL=http://localhost:5005 pytest tests/test_integration_api.py -v
+  CTS_URL=http://localhost:5005 pytest tests/test_integration_api.py -v
 
-2. Kubectl exec mode (CI testing):
-   KUBECTL_POD=cts-abc123 pytest tests/test_integration_api.py -v
-
-   Uses kubectl exec to run curl inside the CTS pod. URLs are properly quoted
-   to handle special characters like & in query parameters.
+In CI, the tests run in a pod deployed to the same namespace as the CTS service,
+so they can access it directly via: http://cts:5005
 """
 
 import json
 import os
-import subprocess
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
 
@@ -23,75 +18,38 @@ import pytest
 
 
 class HTTPClient:
-    """HTTP client that works in both direct and kubectl exec modes"""
+    """Simple HTTP client for making requests to the CTS API"""
 
-    def __init__(self, base_url=None, kubectl_pod=None):
-        self.base_url = base_url.rstrip("/") if base_url else None
-        self.kubectl_pod = kubectl_pod
+    def __init__(self, base_url):
+        self.base_url = base_url.rstrip("/")
 
     def _request(self, method, path, json_data=None):
         """Make HTTP request with specified method"""
-        if self.kubectl_pod:
-            # Kubectl exec mode - use curl
-            # Important: Quote the URL to prevent shell interpretation of & and other special chars
-            url = f"http://localhost:5005{path}"
-            if json_data:
-                json_str = json.dumps(json_data).replace("'", "'\\''")
-                cmd = f"curl -s -w '\\n%{{http_code}}' -X {method} -H 'Content-Type: application/json' -d '{json_str}' '{url}'"
-            else:
-                cmd = f"curl -s -w '\\n%{{http_code}}' -X {method} '{url}'"
+        url = f"{self.base_url}{path}"
+        req = Request(url, method=method)
+        if json_data:
+            req.add_header("Content-Type", "application/json")
+            req.data = json.dumps(json_data).encode("utf-8")
 
-            result = subprocess.run(
-                ["kubectl", "exec", "-i", self.kubectl_pod, "--", "sh", "-c", cmd],
-                capture_output=True,
-                text=True,
-            )
-
-            # Parse output: last line is status code, rest is body
-            lines = result.stdout.rsplit("\n", 1)
-            if len(lines) == 2:
-                body, status_code = lines
-                try:
-                    status = int(status_code)
-                except ValueError:
-                    body = result.stdout
-                    status = 200 if result.returncode == 0 else 500
-            else:
-                body = result.stdout
-                status = 200 if result.returncode == 0 else 500
-
-            # Try to parse as JSON
+        try:
+            with urlopen(req, timeout=10) as response:
+                data = response.read()
+                if response.headers.get("Content-Type", "").startswith(
+                    "application/json"
+                ):
+                    return response.status, json.loads(data)
+                return response.status, data.decode("utf-8")
+        except HTTPError as e:
+            # Try to read error body
             try:
-                return status, json.loads(body) if body.strip() else {}
-            except json.JSONDecodeError:
-                return status, body
-        else:
-            # Direct HTTP mode
-            url = f"{self.base_url}{path}"
-            req = Request(url, method=method)
-            if json_data:
-                req.add_header("Content-Type", "application/json")
-                req.data = json.dumps(json_data).encode("utf-8")
-
-            try:
-                with urlopen(req, timeout=10) as response:
-                    data = response.read()
-                    if response.headers.get("Content-Type", "").startswith(
-                        "application/json"
-                    ):
-                        return response.status, json.loads(data)
-                    return response.status, data.decode("utf-8")
-            except HTTPError as e:
-                # Try to read error body
-                try:
-                    error_data = e.read()
-                    if e.headers.get("Content-Type", "").startswith("application/json"):
-                        return e.code, json.loads(error_data)
-                    return e.code, error_data.decode("utf-8")
-                except:
-                    return e.code, None
-            except URLError as e:
-                raise Exception(f"Failed to connect to {url}: {e}")
+                error_data = e.read()
+                if e.headers.get("Content-Type", "").startswith("application/json"):
+                    return e.code, json.loads(error_data)
+                return e.code, error_data.decode("utf-8")
+            except:
+                return e.code, None
+        except URLError as e:
+            raise Exception(f"Failed to connect to {url}: {e}")
 
     def get(self, path):
         """Make HTTP GET request"""
@@ -112,18 +70,14 @@ class HTTPClient:
 
 @pytest.fixture(scope="module")
 def http_client():
-    """HTTP client fixture that auto-detects mode from environment"""
-    kubectl_pod = os.environ.get("KUBECTL_POD")
+    """HTTP client fixture that reads CTS_URL from environment"""
     base_url = os.environ.get("CTS_URL")
 
-    if kubectl_pod:
-        print(f"\nUsing kubectl exec mode (pod: {kubectl_pod})")
-        return HTTPClient(kubectl_pod=kubectl_pod)
-    elif base_url:
-        print(f"\nUsing direct HTTP mode (URL: {base_url})")
-        return HTTPClient(base_url=base_url)
-    else:
-        pytest.skip("Must set either CTS_URL or KUBECTL_POD environment variable")
+    if not base_url:
+        pytest.skip("Must set CTS_URL environment variable")
+
+    print(f"\nConnecting to CTS at: {base_url}")
+    return HTTPClient(base_url=base_url)
 
 
 def _create_compose_info(
