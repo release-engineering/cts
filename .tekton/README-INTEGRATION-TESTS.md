@@ -29,13 +29,11 @@ service with a real PostgreSQL database.
 ### Test Scripts
 
 - **`../tests/test_integration_api.py`** - Integration tests using pytest
-  - Supports both local testing and CI pipeline testing
   - Uses pytest fixtures for clean test setup
-  - Two modes:
-    - **Direct HTTP**: `CTS_URL=http://localhost:5005 pytest tests/test_integration_api.py -v`
-    - **Kubectl exec**: `KUBECTL_POD=<pod-name> pytest tests/test_integration_api.py -v`
-  - In CI, uses kubectl exec mode to run curl commands inside the CTS pod
-  - Tests all major API endpoints
+  - Makes direct HTTP requests to CTS API
+  - Run with: `CTS_URL=http://localhost:5005 pytest tests/test_integration_api.py -v`
+  - In CI, runs in a pod deployed to the same namespace as CTS
+  - Tests all major API endpoints and workflows
   - Edit this file to add or modify integration tests
 
 ## What Gets Tested
@@ -83,12 +81,14 @@ The integration tests validate:
 └─────────────┬───────────────┘
               │
 ┌─────────────▼───────────────┐
-│ 5. Run Integration Tests    │  Clone repo, run tests via kubectl exec
-│                             │
+│ 5. Run Integration Tests    │  Create test runner pod in ephemeral ns
+│                             │  Install pytest, clone repo
+│                             │  Run tests with direct HTTP to CTS service
 └─────────────┬───────────────┘
               │
 ┌─────────────▼───────────────┐
 │ 6. Automatic Cleanup        │  Ephemeral namespace deleted by EaaS
+│                             │  (includes test runner, CTS, and database)
 └─────────────────────────────┘
 ```
 
