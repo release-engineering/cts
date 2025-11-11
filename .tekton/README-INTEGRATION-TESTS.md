@@ -128,5 +128,5 @@ Edit `.tekton/integration-test-eaas.yaml` to change:
 
 ## Related Documentation
 
-- [Konflux Integration Tests](https://konflux-ci.dev/docs/how-tos/testing/integration/)
+- [Konflux Integration Tests](https://konflux-ci.dev/docs/testing/integration/)
 - [Tekton Pipelines](https://tekton.dev/docs/pipelines/)
