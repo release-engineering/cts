@@ -21,7 +21,7 @@ For production env running via httpd for example, `openapispec.json` should be s
 Messaging API
 =============
 
-CTS also sends AMQP or fedora-messaging messages when Compose changes.
+CTS also sends AMQP messages when Compose changes.
 
 Topic: cts.compose-created
 --------------------------

@@ -119,23 +119,9 @@ def _umb_send_msg(msgs):
     _retry_with_backoff(_send)
 
 
-def _fedora_messaging_send_msg(msgs):
-    """Send message to fedora-messaging."""
-    from fedora_messaging import api, config
-
-    config.conf.setup_logging()
-
-    for msg in msgs:
-        event = msg.get("event", "event")
-        topic = "%s%s" % (conf.messaging_topic_prefix, event)
-        api.publish(api.Message(topic=topic, body=msg))
-
-
 def _get_messaging_backend():
     if conf.messaging_backend == "rhmsg":
         return _umb_send_msg
-    elif conf.messaging_backend == "fedora-messaging":
-        return _fedora_messaging_send_msg
     elif conf.messaging_backend:
         raise ValueError("Unknown messaging backend {0}".format(conf.messaging_backend))
     else:
