@@ -36,11 +36,6 @@ try:
 except ImportError:
     rhmsg = None
 
-try:
-    import fedora_messaging
-except ImportError:
-    fedora_messaging = None
-
 
 @unittest.skipUnless(rhmsg, "rhmsg is required to run this test case.")
 class TestRHMsgSendMessageWhenComposeIsCreated(ModelsBaseTest):
@@ -84,43 +79,6 @@ class TestRHMsgSendMessageWhenComposeIsCreated(ModelsBaseTest):
 
             producer_send = AMQProducer.return_value.__enter__.return_value.send
             producer_send.assert_called_once_with(Message.return_value)
-
-
-@unittest.skipUnless(
-    fedora_messaging, "fedora_messaging is required to run this test case."
-)
-class TestFedoraMessagingSendMessageWhenComposeIsCreated(ModelsBaseTest):
-    """Test send message when compose is created"""
-
-    disable_event_handlers = False
-
-    def setUp(self):
-        super(TestFedoraMessagingSendMessageWhenComposeIsCreated, self).setUp()
-
-        # Real lock is not required for running tests
-        self.mock_lock = patch("threading.Lock")
-        self.mock_lock.start()
-
-    def tearDown(self):
-        super(TestFedoraMessagingSendMessageWhenComposeIsCreated, self).tearDown()
-        self.mock_lock.stop()
-
-    def setup_composes(self):
-        User.create_user(username="odcs")
-        self.compose = Compose.create(db.session, "odcs", self.ci)[0]
-
-    @patch.object(conf, "messaging_backend", new="fedora-messaging")
-    @patch("fedora_messaging.api.Message")
-    @patch("fedora_messaging.api.publish")
-    def test_send_message(self, publish, Message):
-        compose = Compose.create(db.session, "odcs", self.ci)[0]
-
-        Message.assert_called_once_with(
-            topic="cts.compose-created",
-            body={"event": "compose-created", "compose": compose.json()},
-        )
-
-        publish.assert_called_once_with(Message.return_value)
 
 
 @patch("cts.messaging.publish")
