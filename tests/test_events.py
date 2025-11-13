@@ -348,3 +348,147 @@ class TestMessaging(ModelsBaseTest):
         self.assertEqual(publish.mock_calls[7], expected_call)
         # There should be 8 mock calls, since timeout is not occured for development-nightly-requested compose and nightly compose is not retagged
         self.assertEqual(len(publish.mock_calls), 8)
+
+
+@unittest.skipUnless(rhmsg, "rhmsg is required to run this test case.")
+class TestRhmsgRetries(unittest.TestCase):
+    """Test certificate file validation for UMB messaging"""
+
+    def test_retry_with_backoff_success_on_first_attempt(self):
+        """Test retry succeeds immediately if function works on first try"""
+        from cts.messaging import _retry_with_backoff
+
+        call_count = [0]
+
+        def successful_func():
+            call_count[0] += 1
+            return "success"
+
+        result = _retry_with_backoff(successful_func)
+        self.assertEqual(result, "success")
+        self.assertEqual(call_count[0], 1)
+
+    def test_retry_with_backoff_success_after_failures(self):
+        """Test retry succeeds after some failures"""
+        from cts.messaging import _retry_with_backoff
+
+        call_count = [0]
+
+        def flaky_func():
+            call_count[0] += 1
+            if call_count[0] < 3:
+                raise ConnectionError("Temporary failure")
+            return "success"
+
+        with patch("time.sleep"):  # Mock sleep to speed up test
+            result = _retry_with_backoff(flaky_func, max_retries=3)
+
+        self.assertEqual(result, "success")
+        self.assertEqual(call_count[0], 3)
+
+    def test_retry_with_backoff_exhausts_retries(self):
+        """Test retry raises exception after all retries exhausted"""
+        from cts.messaging import _retry_with_backoff
+
+        call_count = [0]
+
+        def always_fails():
+            call_count[0] += 1
+            raise ConnectionError("Persistent failure")
+
+        with patch("time.sleep"):  # Mock sleep to speed up test
+            with self.assertRaises(ConnectionError) as cm:
+                _retry_with_backoff(always_fails, max_retries=2)
+
+        self.assertIn("Persistent failure", str(cm.exception))
+        self.assertEqual(call_count[0], 3)  # Initial attempt + 2 retries
+
+    @patch("rhmsg.activemq.producer.AMQProducer")
+    @patch("proton.Message")
+    def test_umb_send_msg_retries_on_transient_failure(
+        self, mock_message, mock_producer
+    ):
+        """Test that _umb_send_msg retries on transient failures"""
+        from cts.messaging import _umb_send_msg
+
+        # Simulate transient failure then success
+        attempt_count = [0]
+
+        def producer_side_effect(*args, **kwargs):
+            attempt_count[0] += 1
+            if attempt_count[0] == 1:
+                raise ConnectionError("Transient network error")
+            return mock_producer.return_value
+
+        with patch("time.sleep"):  # Mock sleep to speed up test
+            with patch(
+                "rhmsg.activemq.producer.AMQProducer", side_effect=producer_side_effect
+            ):
+                # Should succeed on second attempt
+                _umb_send_msg([{"event": "test", "data": "test"}])
+
+        self.assertEqual(attempt_count[0], 2)
+
+    def test_publish_is_async(self):
+        """Test that publish() returns immediately without blocking"""
+        from cts.messaging import publish, _executor
+        import time
+
+        # Mock the backend to simulate slow operation
+        slow_backend = Mock()
+
+        def slow_send(msgs):
+            time.sleep(0.1)  # Simulate slow message sending
+
+        slow_backend.side_effect = slow_send
+
+        with patch("cts.messaging._get_messaging_backend", return_value=slow_backend):
+            start = time.time()
+            publish([{"event": "test"}])
+            elapsed = time.time() - start
+
+            # publish() should return immediately (much less than 0.1s)
+            self.assertLess(elapsed, 0.05)
+
+            # Wait for background thread to complete
+            _executor.shutdown(wait=True, cancel_futures=False)
+
+            # Now the backend should have been called
+            slow_backend.assert_called_once()
+
+        # Recreate executor for other tests
+        import cts.messaging
+        from concurrent.futures import ThreadPoolExecutor
+
+        cts.messaging._executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="cts-messaging"
+        )
+
+    def test_publish_error_handling_in_background_thread(self):
+        """Test that errors in background thread are logged properly"""
+        from cts.messaging import publish, _executor
+
+        # Mock backend that raises an error
+        failing_backend = Mock(side_effect=RuntimeError("Connection failed"))
+
+        with patch(
+            "cts.messaging._get_messaging_backend", return_value=failing_backend
+        ):
+            with patch("cts.messaging.log") as mock_log:
+                publish([{"event": "test"}])
+
+                # Wait for background thread to complete
+                _executor.shutdown(wait=True, cancel_futures=False)
+
+                # Error should have been logged
+                mock_log.exception.assert_called_once_with(
+                    "Failed to publish messages to message broker."
+                )
+
+        # Recreate executor for other tests
+        import cts.messaging
+        from concurrent.futures import ThreadPoolExecutor
+
+        cts.messaging._executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="cts-messaging"
+        )
