@@ -55,7 +55,7 @@ class BaseConfiguration(object):
 
     # Select backend where message will be sent to. Currently, umb is supported
     # which means the Unified Message Bus.
-    MESSAGING_BACKEND = ""  # fedora-messaging or umb
+    MESSAGING_BACKEND = ""  # rhmsg
 
     # List of broker URLs. Each of them is a string consisting of domain and
     # optiona port.

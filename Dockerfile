@@ -22,7 +22,6 @@ RUN dnf -y --setopt=install_weak_deps=False update \
         mod_ldap \
         mod_ssl \
         python3-defusedxml \
-        python3-fedora \
         python3-flask \
         python3-flask-login \
         python3-flask-migrate \
