@@ -144,7 +144,7 @@ class Config(object):
         "messaging_backend": {
             "type": str,
             "default": "",
-            "desc": "Messaging backend, rhmsg or fedora-messaging.",
+            "desc": "Messaging backend, rhmsg.",
         },
         "messaging_broker_urls": {
             "type": list,
@@ -169,7 +169,7 @@ class Config(object):
         "messaging_topic_prefix": {
             "type": str,
             "default": "cts.",
-            "desc": "Prefix for AMQP or fedora-messaging messages.",
+            "desc": "Prefix for AMQP messages.",
         },
         "oidc_base_namespace": {
             "type": str,
