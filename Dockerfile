@@ -1,4 +1,4 @@
-FROM fedora:38
+FROM fedora:44
 
 ARG cacert_url=undefined
 ARG short_commit=unknown
