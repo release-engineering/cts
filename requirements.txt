@@ -8,7 +8,7 @@ productmd
 python-ldap
 prometheus_client
 Werkzeug==2.2.3  # Flask-Login is not compatible with newer version
-apispec==6.3.0  # Pin version to install from pypi
+apispec==6.9.0  # Pin version to install from pypi
 apispec-webframeworks==0.5.2  # Pin version to install from pypi
 marshmallow>=3.18.0
 opentelemetry-instrumentation-flask
