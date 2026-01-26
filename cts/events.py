@@ -29,7 +29,6 @@ from sqlalchemy.orm import attributes
 
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-
 log = getLogger()
 
 _cache_lock = Lock()

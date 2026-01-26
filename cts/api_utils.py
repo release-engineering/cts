@@ -58,14 +58,14 @@ def pagination_metadata(p_query, request_args):
             page=1,
             per_page=p_query.per_page,
             _external=True,
-            **request_args_wo_page
+            **request_args_wo_page,
         ),
         "last": url_for(
             request.endpoint,
             page=p_query.pages,
             per_page=p_query.per_page,
             _external=True,
-            **request_args_wo_page
+            **request_args_wo_page,
         ),
     }
 
@@ -75,7 +75,7 @@ def pagination_metadata(p_query, request_args):
             page=p_query.prev_num,
             per_page=p_query.per_page,
             _external=True,
-            **request_args_wo_page
+            **request_args_wo_page,
         )
 
     if p_query.has_next:
@@ -84,7 +84,7 @@ def pagination_metadata(p_query, request_args):
             page=p_query.next_num,
             per_page=p_query.per_page,
             _external=True,
-            **request_args_wo_page
+            **request_args_wo_page,
         )
 
     return pagination_data
