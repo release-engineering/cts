@@ -34,7 +34,6 @@ from prometheus_client import (  # noqa: F401
 
 from cts import db
 
-
 # This environment variable should be set if deployment uses multiple
 # processes.
 if not os.environ.get("prometheus_multiproc_dir"):

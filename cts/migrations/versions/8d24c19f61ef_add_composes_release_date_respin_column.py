@@ -22,13 +22,11 @@ def upgrade():
         batch_op.create_unique_constraint(
             "uq_composes_release_date_respin", ["release_date_respin"]
         )
-    op.execute(
-        """
+    op.execute("""
         UPDATE composes
         SET release_date_respin = CONCAT_WS('-', release_short, release_version, date_respin)
         WHERE date_respin IS NOT NULL
-        """
-    )
+        """)
 
 
 def downgrade():
