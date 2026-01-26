@@ -23,7 +23,6 @@
 
 """SQLAlchemy Database models for the Flask app"""
 
-
 import json
 from flask_login import UserMixin
 from productmd import ComposeInfo

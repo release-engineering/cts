@@ -1,7 +1,6 @@
 import os
 from os import path
 
-
 # FIXME: workaround for this moment till confdir, dbdir (installdir etc.) are
 # declared properly somewhere/somehow
 confdir = path.abspath(path.dirname(__file__))

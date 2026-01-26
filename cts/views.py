@@ -48,7 +48,6 @@ from cts.api_utils import (
 from cts.auth import requires_role, require_scopes, require_oidc_scope, has_role
 from cts.metrics import registry
 
-
 app.openapispec = APISpec(
     title="Compose Tracking Service (CTS)",
     version="v1",
@@ -1078,9 +1077,7 @@ name=Compose {compose.id} (RPMs) - {variant}
 baseurl={baseurl}
 enabled=1
 gpgcheck=0
-""".format(
-            compose=compose, variant=variant, baseurl=baseurl
-        )
+""".format(compose=compose, variant=variant, baseurl=baseurl)
         return Response(content, content_type="text/plain")
 
 
