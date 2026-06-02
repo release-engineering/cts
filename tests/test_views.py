@@ -1110,3 +1110,90 @@ class TestViewsComposeChanges(ViewBaseTest):
         self.assertEqual(rv.status, "200 OK")
         self.assertEqual(len(data["changes"]), 2)
         self.assertEqual(data["changes"], [c.json() for c in self.c.changes])
+
+
+class TestViewsTagChanges(ViewBaseTest):
+    maxDiff = None
+
+    def setup_composes(self):
+        User.create_user(username="odcs")
+        self.t = Tag.create(
+            db.session,
+            "odcs",
+            name="test-tag",
+            description="A test tag",
+            documentation="http://localhost/docs",
+        )
+
+    def test_initial_change(self):
+        """After tag creation there is exactly one 'created' change record."""
+        with self._test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/tags/test-tag/changes/")
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "200 OK")
+        self.assertEqual(len(data["changes"]), 1)
+        self.assertEqual(data["changes"][0]["action"], "created")
+        self.assertEqual(data["changes"], [c.json() for c in self.t.changes])
+
+    def test_initial_change_by_id(self):
+        """The changes endpoint can also be addressed by numeric tag id."""
+        with self._test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/tags/%d/changes/" % self.t.id)
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "200 OK")
+        self.assertEqual(len(data["changes"]), 1)
+        self.assertEqual(data["changes"], [c.json() for c in self.t.changes])
+
+    def test_changes_after_add_tagger(self):
+        """Adding a tagger appends an 'add_tagger' change record."""
+        self.t.add_tagger("odcs", username="odcs")
+        with self._test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/tags/test-tag/changes/")
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "200 OK")
+        self.assertEqual(len(data["changes"]), 2)
+        self.assertEqual(data["changes"][-1]["action"], "add_tagger")
+        self.assertEqual(data["changes"], [c.json() for c in self.t.changes])
+
+    def test_changes_after_remove_tagger(self):
+        """Removing a previously-added tagger appends a 'remove_tagger' change record."""
+        self.t.add_tagger("odcs", username="odcs")
+        self.t.remove_tagger("odcs", username="odcs")
+        with self._test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/tags/test-tag/changes/")
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "200 OK")
+        self.assertEqual(len(data["changes"]), 3)
+        self.assertEqual(data["changes"][-1]["action"], "remove_tagger")
+        self.assertEqual(data["changes"], [c.json() for c in self.t.changes])
+
+    def test_changes_after_add_untagger(self):
+        """Adding an untagger appends an 'add_untagger' change record."""
+        self.t.add_untagger("odcs", username="odcs")
+        with self._test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/tags/test-tag/changes/")
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "200 OK")
+        self.assertEqual(len(data["changes"]), 2)
+        self.assertEqual(data["changes"][-1]["action"], "add_untagger")
+        self.assertEqual(data["changes"], [c.json() for c in self.t.changes])
+
+    def test_changes_after_remove_untagger(self):
+        """Removing a previously-added untagger appends a 'remove_untagger' change record."""
+        self.t.add_untagger("odcs", username="odcs")
+        self.t.remove_untagger("odcs", username="odcs")
+        with self._test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/tags/test-tag/changes/")
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "200 OK")
+        self.assertEqual(len(data["changes"]), 3)
+        self.assertEqual(data["changes"][-1]["action"], "remove_untagger")
+        self.assertEqual(data["changes"], [c.json() for c in self.t.changes])
+
+    def test_tag_not_found(self):
+        """Requesting changes for a non-existent tag returns 404."""
+        with self._test_request_context(user="odcs"):
+            rv = self.client.get("/api/1/tags/no-such-tag/changes/")
+            data = json.loads(rv.get_data(as_text=True))
+        self.assertEqual(rv.status, "404 NOT FOUND")
+        self.assertEqual(data["status"], 404)
