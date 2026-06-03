@@ -240,6 +240,44 @@ spec:
           echo "=========================================="
           echo "Image: $IMAGE"
 
+          # Create ConfigMap with production configuration and httpd config for CTS
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: cts-config
+          data:
+            config.py: |
+              from conf.config import BaseConfiguration
+
+              class ProdConfiguration(BaseConfiguration):
+                  AUTH_BACKEND = "noauth"
+                  SQLALCHEMY_DATABASE_URI = "postgresql://cts:cts-test@cts-db:5432/cts"
+            httpd.conf: |
+              ServerRoot "/etc/httpd"
+              PidFile /tmp/httpd.pid
+              Listen 0.0.0.0:8080 http
+              User apache
+              Group apache
+              DocumentRoot "/var/www/html"
+              ErrorLog /dev/stderr
+              TransferLog /dev/stdout
+              LogLevel warn
+              TypesConfig /etc/mime.types
+              DefaultRuntimeDir /tmp
+
+              Include conf.modules.d/*.conf
+
+              WSGISocketPrefix /tmp/wsgi
+              WSGIDaemonProcess cts threads=5 home=/usr/share/cts
+              WSGIScriptAlias / /usr/share/cts/cts.wsgi
+
+              <Directory /usr/share/cts>
+                  WSGIProcessGroup cts
+                  WSGIApplicationGroup %{GLOBAL}
+              </Directory>
+          EOF
+
           # Deploy CTS
           kubectl apply -f - <<EOF
           apiVersion: v1
@@ -250,8 +288,8 @@ spec:
               app: cts
           spec:
             ports:
-            - port: 5005
-              targetPort: 5005
+            - port: 8080
+              targetPort: 8080
               name: http
             selector:
               app: cts
@@ -275,11 +313,6 @@ spec:
                 initContainers:
                 - name: run-migrations
                   image: $IMAGE
-                  env:
-                  - name: CTS_DEVELOPER_ENV
-                    value: "1"
-                  - name: SQLALCHEMY_DATABASE_URI
-                    value: "postgresql://cts:cts-test@cts-db:5432/cts"
                   command:
                   - /bin/bash
                   - -c
@@ -289,16 +322,19 @@ spec:
                     cd /src
                     cts-manager db upgrade
                     echo "Migrations completed successfully"
+                  volumeMounts:
+                  - name: cts-config
+                    mountPath: /etc/cts
+                    readOnly: true
                 containers:
                 - name: cts
                   image: $IMAGE
-                  env:
-                  - name: CTS_DEVELOPER_ENV
-                    value: "1"
-                  - name: SQLALCHEMY_DATABASE_URI
-                    value: "postgresql://cts:cts-test@cts-db:5432/cts"
+                  command:
+                  - /bin/bash
+                  - -c
+                  - exec httpd -DFOREGROUND -f /etc/cts/httpd.conf
                   ports:
-                  - containerPort: 5005
+                  - containerPort: 8080
                   resources:
                     requests:
                       memory: "256Mi"
@@ -309,7 +345,7 @@ spec:
                   readinessProbe:
                     httpGet:
                       path: /api/1/
-                      port: 5005
+                      port: 8080
                     initialDelaySeconds: 15
                     periodSeconds: 5
                     timeoutSeconds: 5
@@ -317,10 +353,18 @@ spec:
                   livenessProbe:
                     httpGet:
                       path: /api/1/
-                      port: 5005
+                      port: 8080
                     initialDelaySeconds: 30
                     periodSeconds: 10
                     timeoutSeconds: 5
+                  volumeMounts:
+                  - name: cts-config
+                    mountPath: /etc/cts
+                    readOnly: true
+                volumes:
+                - name: cts-config
+                  configMap:
+                    name: cts-config
           EOF
 
           echo "Waiting for CTS service to be ready..."
@@ -425,7 +469,7 @@ spec:
 
           echo ""
           echo "Running tests in pod..."
-          echo "CTS URL: http://cts:5005"
+          echo "CTS URL: http://cts:8080"
           echo ""
 
           # Run the tests - temporarily disable exit-on-error to capture result
@@ -448,7 +492,7 @@ spec:
 
             echo ''
             echo 'Running pytest...'
-            CTS_URL=http://cts:5005 python3 -m pytest tests/test_integration_api.py -v -s -o addopts=
+            CTS_URL=http://cts:8080 python3 -m pytest tests/test_integration_api.py -v -s -o addopts=
           "
           TEST_RESULT=$?
           set -e
