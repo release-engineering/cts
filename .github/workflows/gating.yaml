@@ -38,7 +38,7 @@ jobs:
         run: tox -e docs
       - name: tests
         run: tox -e py3
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         with:
           use_oidc: true
           flags: unit-tests
