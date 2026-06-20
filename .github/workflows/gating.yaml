@@ -16,7 +16,7 @@ jobs:
       image: quay.io/exd-guild-compose/cts:latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install system dependencies
         run: >
           sudo dnf update -y &&
