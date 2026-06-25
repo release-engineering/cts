@@ -144,7 +144,7 @@ class Config(object):
         "messaging_backend": {
             "type": str,
             "default": "",
-            "desc": "Messaging backend, rhmsg.",
+            "desc": "Messaging backend, kafka or rhmsg.",
         },
         "messaging_broker_urls": {
             "type": list,
@@ -166,10 +166,35 @@ class Config(object):
             "default": "",
             "desc": "Path to trusted CA certificate bundle.",
         },
+        "messaging_kafka_username": {
+            "type": str,
+            "default": "",
+            "desc": "Username for Kafka authentication.",
+        },
+        "messaging_kafka_password": {
+            "type": str,
+            "default": "",
+            "desc": "Password for Kafka authentication.",
+        },
+        "messaging_kafka_security_protocol": {
+            "type": str,
+            "default": "SASL_SSL",
+            "desc": "Kafka security protocol (e.g. SASL_SSL, SSL, PLAINTEXT).",
+        },
+        "messaging_kafka_sasl_mechanism": {
+            "type": str,
+            "default": "SCRAM-SHA-512",
+            "desc": "Kafka SASL mechanism (e.g. SCRAM-SHA-512, PLAIN).",
+        },
+        "messaging_kafka_compression_type": {
+            "type": str,
+            "default": "snappy",
+            "desc": "Kafka message compression type (e.g. snappy, gzip, lz4, none).",
+        },
         "messaging_topic_prefix": {
             "type": str,
             "default": "cts.",
-            "desc": "Prefix for AMQP messages.",
+            "desc": "Prefix for messaging topics.",
         },
         "oidc_base_namespace": {
             "type": str,

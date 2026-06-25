@@ -54,7 +54,7 @@ class BaseConfiguration(object):
 
     # Select backend where message will be sent to. Currently, umb is supported
     # which means the Unified Message Bus.
-    MESSAGING_BACKEND = ""  # rhmsg
+    MESSAGING_BACKEND = ""  # kafka or rhmsg
 
     # List of broker URLs. Each of them is a string consisting of domain and
     # optiona port.
@@ -67,6 +67,13 @@ class BaseConfiguration(object):
     MESSAGING_KEY_FILE = ""
 
     MESSAGING_CA_CERT = ""
+
+    # Kafka authentication and connection settings.
+    MESSAGING_KAFKA_USERNAME = ""
+    MESSAGING_KAFKA_PASSWORD = ""
+    MESSAGING_KAFKA_SECURITY_PROTOCOL = "SASL_SSL"
+    MESSAGING_KAFKA_SASL_MECHANISM = "SCRAM-SHA-512"
+    MESSAGING_KAFKA_COMPRESSION_TYPE = "snappy"
 
     # The MESSAGING_TOPIC is used as topic for messages sent when compose
     # state is change.

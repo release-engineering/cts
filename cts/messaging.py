@@ -81,15 +81,63 @@ def _retry_with_backoff(func, max_retries=3, initial_delay=1.0, backoff_multipli
             last_exception = e
             if attempt < max_retries:
                 log.warning(
-                    f"UMB messaging attempt {attempt + 1}/{max_retries + 1} failed: {e}. "
+                    f"Messaging attempt {attempt + 1}/{max_retries + 1} failed: {e}. "
                     f"Retrying in {delay:.1f}s..."
                 )
                 time.sleep(delay)
                 delay *= backoff_multiplier
             else:
-                log.error(f"UMB messaging failed after {max_retries + 1} attempts: {e}")
+                log.error(f"Messaging failed after {max_retries + 1} attempts: {e}")
 
     raise last_exception
+
+
+def _kafka_send_msg(msgs):
+    """Send messages to Kafka with retry logic.
+
+    :param list[dict] msgs: List of messages to be sent.
+    :raises Exception: If Kafka operations fail after retries
+    """
+    from kafka import KafkaProducer
+
+    def _send():
+        """Inner function to send messages (will be retried on failure)"""
+        config = {
+            "bootstrap_servers": conf.messaging_broker_urls,
+            "compression_type": conf.messaging_kafka_compression_type,
+            "security_protocol": conf.messaging_kafka_security_protocol,
+            "sasl_mechanism": conf.messaging_kafka_sasl_mechanism,
+            "sasl_plain_username": conf.messaging_kafka_username,
+            "sasl_plain_password": conf.messaging_kafka_password,
+            "value_serializer": lambda v: json.dumps(v).encode("utf-8"),
+        }
+
+        producer = None
+        try:
+            producer = KafkaProducer(**config)
+
+            # Send all messages first, then flush once for better performance
+            for msg in msgs:
+                event = msg.get("event", "event")
+                topic = "%s%s" % (conf.messaging_topic_prefix, event)
+                producer.send(topic, msg)
+
+            # Single flush for all messages - more efficient than flushing each message
+            producer.flush()
+
+        except Exception as e:
+            log.error("Failed to send messages to Kafka: %s", str(e))
+            raise
+        finally:
+            # Ensure producer is always closed, even on exceptions
+            if producer is not None:
+                try:
+                    producer.close()
+                except Exception as e:
+                    log.warning("Error closing Kafka producer: %s", str(e))
+
+    # Retry the send operation with exponential backoff
+    _retry_with_backoff(_send)
 
 
 def _umb_send_msg(msgs):
@@ -120,7 +168,9 @@ def _umb_send_msg(msgs):
 
 
 def _get_messaging_backend():
-    if conf.messaging_backend == "rhmsg":
+    if conf.messaging_backend == "kafka":
+        return _kafka_send_msg
+    elif conf.messaging_backend == "rhmsg":
         return _umb_send_msg
     elif conf.messaging_backend:
         raise ValueError("Unknown messaging backend {0}".format(conf.messaging_backend))

@@ -3,7 +3,7 @@ About CTS
 =========
 
 Compose Tracking Service is a small service storing specific metadata about each Pungi Compose.
-It provides a REST API to manipulate these metadata and sends UMB messages on every change of these metadata.
+It provides a REST API to manipulate these metadata and sends messages (via Kafka or UMB) on every change of these metadata.
 
 Scope
 =====
