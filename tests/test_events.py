@@ -21,13 +21,16 @@
 # Written by Chenxiong Qi <cqi@redhat.com>
 
 import json
+import time
 import unittest
 import flask
+from concurrent.futures import ThreadPoolExecutor
 
 from unittest.mock import patch, ANY, call, Mock
 
 from cts import conf
 from cts import app, db
+from cts.messaging import _retry_with_backoff, _kafka_send_msg, _umb_send_msg, publish
 from cts.models import Compose, User, Tag
 from utils import ModelsBaseTest
 
@@ -35,6 +38,11 @@ try:
     import rhmsg
 except ImportError:
     rhmsg = None
+
+try:
+    import kafka
+except ImportError:
+    kafka = None
 
 
 @unittest.skipUnless(rhmsg, "rhmsg is required to run this test case.")
@@ -79,6 +87,71 @@ class TestRHMsgSendMessageWhenComposeIsCreated(ModelsBaseTest):
 
             producer_send = AMQProducer.return_value.__enter__.return_value.send
             producer_send.assert_called_once_with(Message.return_value)
+
+
+@unittest.skipUnless(kafka, "kafka-python is required to run this test case.")
+class TestKafkaSendMessageWhenComposeIsCreated(ModelsBaseTest):
+    """Test send message when compose is created via Kafka backend"""
+
+    disable_event_handlers = False
+
+    def setup_composes(self):
+        User.create_user(username="odcs")
+        db.session.commit()
+
+    @patch.object(conf, "messaging_backend", new="kafka")
+    @patch.object(conf, "messaging_broker_urls", new=["localhost:9092"])
+    @patch.object(conf, "messaging_kafka_username", new="test_user")
+    @patch.object(conf, "messaging_kafka_password", new="test_password")
+    @patch("kafka.KafkaProducer")
+    def test_send_message(self, KafkaProducer):
+        mock_producer = KafkaProducer.return_value
+        test_executor = ThreadPoolExecutor(max_workers=1)
+
+        with app.app_context():
+            with patch("cts.messaging._executor", test_executor):
+                flask.g.user = Mock(username="odcs")
+                compose = Compose.create(db.session, "odcs", self.ci)[0]
+                test_executor.shutdown(wait=True, cancel_futures=False)
+
+            # Verify KafkaProducer was created with correct config
+            call_args = KafkaProducer.call_args[1]
+            self.assertEqual(call_args["bootstrap_servers"], ["localhost:9092"])
+            self.assertEqual(call_args["sasl_plain_username"], "test_user")
+            self.assertEqual(call_args["sasl_plain_password"], "test_password")
+
+            # Verify message was sent to correct topic with correct content
+            mock_producer.send.assert_called_once_with(
+                "cts.compose-created",
+                {
+                    "event": "compose-created",
+                    "compose": compose.json(),
+                    "agent": "odcs",
+                },
+            )
+
+            # Verify flush and close were called
+            mock_producer.flush.assert_called_once()
+            mock_producer.close.assert_called_once()
+
+    @patch.object(conf, "messaging_broker_urls", new=["localhost:9092"])
+    @patch.object(conf, "messaging_kafka_username", new="test_user")
+    @patch.object(conf, "messaging_kafka_password", new="test_password")
+    @patch("kafka.KafkaProducer")
+    def test_kafka_producer_closed_on_exception(self, KafkaProducer):
+        """Test that Kafka producer is closed even when send() fails"""
+        mock_producer = KafkaProducer.return_value
+        mock_producer.send.side_effect = Exception("Send failed")
+
+        msgs = [{"event": "test", "data": "test_data"}]
+
+        with patch("time.sleep"):  # Mock sleep for retry backoff
+            with self.assertRaises(Exception):
+                _kafka_send_msg(msgs)
+
+        # Producer close should be called on every retry attempt (finally block)
+        # Default is 3 retries + 1 initial = 4 attempts
+        self.assertEqual(mock_producer.close.call_count, 4)
 
 
 @patch("cts.messaging.publish")
@@ -308,14 +381,11 @@ class TestMessaging(ModelsBaseTest):
         self.assertEqual(len(publish.mock_calls), 8)
 
 
-@unittest.skipUnless(rhmsg, "rhmsg is required to run this test case.")
-class TestRhmsgRetries(unittest.TestCase):
-    """Test certificate file validation for UMB messaging"""
+class TestRetryAndAsyncPublish(unittest.TestCase):
+    """Test retry logic and async publishing (backend-agnostic)"""
 
     def test_retry_with_backoff_success_on_first_attempt(self):
         """Test retry succeeds immediately if function works on first try"""
-        from cts.messaging import _retry_with_backoff
-
         call_count = [0]
 
         def successful_func():
@@ -328,8 +398,6 @@ class TestRhmsgRetries(unittest.TestCase):
 
     def test_retry_with_backoff_success_after_failures(self):
         """Test retry succeeds after some failures"""
-        from cts.messaging import _retry_with_backoff
-
         call_count = [0]
 
         def flaky_func():
@@ -346,8 +414,6 @@ class TestRhmsgRetries(unittest.TestCase):
 
     def test_retry_with_backoff_exhausts_retries(self):
         """Test retry raises exception after all retries exhausted"""
-        from cts.messaging import _retry_with_backoff
-
         call_count = [0]
 
         def always_fails():
@@ -361,14 +427,66 @@ class TestRhmsgRetries(unittest.TestCase):
         self.assertIn("Persistent failure", str(cm.exception))
         self.assertEqual(call_count[0], 3)  # Initial attempt + 2 retries
 
+    def test_publish_is_async(self):
+        """Test that publish() returns immediately without blocking"""
+
+        # Mock the backend to simulate slow operation
+        slow_backend = Mock()
+
+        def slow_send(msgs):
+            time.sleep(0.1)  # Simulate slow message sending
+
+        slow_backend.side_effect = slow_send
+        test_executor = ThreadPoolExecutor(max_workers=1)
+
+        with patch("cts.messaging._get_messaging_backend", return_value=slow_backend):
+            with patch("cts.messaging._executor", test_executor):
+                start = time.time()
+                publish([{"event": "test"}])
+                elapsed = time.time() - start
+
+                # publish() should return immediately (much less than 0.1s)
+                self.assertLess(elapsed, 0.05)
+
+                # Wait for background thread to complete
+                test_executor.shutdown(wait=True, cancel_futures=False)
+
+                # Now the backend should have been called
+                slow_backend.assert_called_once()
+
+    def test_publish_error_handling_in_background_thread(self):
+        """Test that errors in background thread are logged properly"""
+
+        # Mock backend that raises an error
+        failing_backend = Mock(side_effect=RuntimeError("Connection failed"))
+        test_executor = ThreadPoolExecutor(max_workers=1)
+
+        with patch(
+            "cts.messaging._get_messaging_backend", return_value=failing_backend
+        ):
+            with patch("cts.messaging._executor", test_executor):
+                with patch("cts.messaging.log") as mock_log:
+                    publish([{"event": "test"}])
+
+                    # Wait for background thread to complete
+                    test_executor.shutdown(wait=True, cancel_futures=False)
+
+                    # Error should have been logged
+                    mock_log.exception.assert_called_once_with(
+                        "Failed to publish messages to message broker."
+                    )
+
+
+@unittest.skipUnless(rhmsg, "rhmsg is required to run this test case.")
+class TestRhmsgRetries(unittest.TestCase):
+    """Test UMB-specific retry behavior"""
+
     @patch("rhmsg.activemq.producer.AMQProducer")
     @patch("proton.Message")
     def test_umb_send_msg_retries_on_transient_failure(
         self, mock_message, mock_producer
     ):
         """Test that _umb_send_msg retries on transient failures"""
-        from cts.messaging import _umb_send_msg
-
         # Simulate transient failure then success
         attempt_count = [0]
 
@@ -387,66 +505,30 @@ class TestRhmsgRetries(unittest.TestCase):
 
         self.assertEqual(attempt_count[0], 2)
 
-    def test_publish_is_async(self):
-        """Test that publish() returns immediately without blocking"""
-        from cts.messaging import publish, _executor
-        import time
 
-        # Mock the backend to simulate slow operation
-        slow_backend = Mock()
+@unittest.skipUnless(kafka, "kafka-python is required to run this test case.")
+class TestKafkaRetries(unittest.TestCase):
+    """Test Kafka-specific retry behavior"""
 
-        def slow_send(msgs):
-            time.sleep(0.1)  # Simulate slow message sending
+    @patch.object(conf, "messaging_broker_urls", new=["localhost:9092"])
+    @patch.object(conf, "messaging_kafka_username", new="test_user")
+    @patch.object(conf, "messaging_kafka_password", new="test_password")
+    @patch.object(conf, "messaging_topic_prefix", new="cts.")
+    def test_kafka_send_msg_retries_on_transient_failure(self):
+        """Test that _kafka_send_msg retries on transient failures"""
+        # Simulate transient failure then success
+        attempt_count = [0]
+        mock_producer = Mock()
 
-        slow_backend.side_effect = slow_send
+        def producer_side_effect(*args, **kwargs):
+            attempt_count[0] += 1
+            if attempt_count[0] == 1:
+                raise ConnectionError("Transient network error")
+            return mock_producer
 
-        with patch("cts.messaging._get_messaging_backend", return_value=slow_backend):
-            start = time.time()
-            publish([{"event": "test"}])
-            elapsed = time.time() - start
+        with patch("time.sleep"):  # Mock sleep to speed up test
+            with patch("kafka.KafkaProducer", side_effect=producer_side_effect):
+                # Should succeed on second attempt
+                _kafka_send_msg([{"event": "test", "data": "test"}])
 
-            # publish() should return immediately (much less than 0.1s)
-            self.assertLess(elapsed, 0.05)
-
-            # Wait for background thread to complete
-            _executor.shutdown(wait=True, cancel_futures=False)
-
-            # Now the backend should have been called
-            slow_backend.assert_called_once()
-
-        # Recreate executor for other tests
-        import cts.messaging
-        from concurrent.futures import ThreadPoolExecutor
-
-        cts.messaging._executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="cts-messaging"
-        )
-
-    def test_publish_error_handling_in_background_thread(self):
-        """Test that errors in background thread are logged properly"""
-        from cts.messaging import publish, _executor
-
-        # Mock backend that raises an error
-        failing_backend = Mock(side_effect=RuntimeError("Connection failed"))
-
-        with patch(
-            "cts.messaging._get_messaging_backend", return_value=failing_backend
-        ):
-            with patch("cts.messaging.log") as mock_log:
-                publish([{"event": "test"}])
-
-                # Wait for background thread to complete
-                _executor.shutdown(wait=True, cancel_futures=False)
-
-                # Error should have been logged
-                mock_log.exception.assert_called_once_with(
-                    "Failed to publish messages to message broker."
-                )
-
-        # Recreate executor for other tests
-        import cts.messaging
-        from concurrent.futures import ThreadPoolExecutor
-
-        cts.messaging._executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="cts-messaging"
-        )
+        self.assertEqual(attempt_count[0], 2)

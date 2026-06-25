@@ -14,3 +14,4 @@ marshmallow>=3.18.0
 opentelemetry-instrumentation-flask
 opentelemetry-instrumentation-sqlalchemy
 opentelemetry-exporter-otlp-proto-http
+kafka-python[snappy]
