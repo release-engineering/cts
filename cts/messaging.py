@@ -92,51 +92,61 @@ def _retry_with_backoff(func, max_retries=3, initial_delay=1.0, backoff_multipli
     raise last_exception
 
 
+_kafka_producer = None
+
+
+def _get_kafka_producer():
+    """Get or create a long-lived Kafka producer.
+
+    The producer is created lazily on first use and reused for subsequent
+    calls to avoid repeated TCP/TLS/SASL handshakes.
+    """
+    global _kafka_producer
+    if _kafka_producer is None:
+        from kafka import KafkaProducer
+
+        _kafka_producer = KafkaProducer(
+            bootstrap_servers=conf.messaging_broker_urls,
+            compression_type=conf.messaging_kafka_compression_type,
+            security_protocol=conf.messaging_kafka_security_protocol,
+            sasl_mechanism=conf.messaging_kafka_sasl_mechanism,
+            sasl_plain_username=conf.messaging_kafka_username,
+            sasl_plain_password=conf.messaging_kafka_password,
+            value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+        )
+    return _kafka_producer
+
+
 def _kafka_send_msg(msgs):
     """Send messages to Kafka with retry logic.
+
+    Uses a persistent producer that is reused across calls. On failure,
+    the producer is closed and recreated on the next retry attempt.
 
     :param list[dict] msgs: List of messages to be sent.
     :raises Exception: If Kafka operations fail after retries
     """
-    from kafka import KafkaProducer
 
     def _send():
-        """Inner function to send messages (will be retried on failure)"""
-        config = {
-            "bootstrap_servers": conf.messaging_broker_urls,
-            "compression_type": conf.messaging_kafka_compression_type,
-            "security_protocol": conf.messaging_kafka_security_protocol,
-            "sasl_mechanism": conf.messaging_kafka_sasl_mechanism,
-            "sasl_plain_username": conf.messaging_kafka_username,
-            "sasl_plain_password": conf.messaging_kafka_password,
-            "value_serializer": lambda v: json.dumps(v).encode("utf-8"),
-        }
-
-        producer = None
+        global _kafka_producer
         try:
-            producer = KafkaProducer(**config)
-
-            # Send all messages first, then flush once for better performance
+            producer = _get_kafka_producer()
             for msg in msgs:
                 event = msg.get("event", "event")
                 topic = "%s%s" % (conf.messaging_topic_prefix, event)
                 producer.send(topic, msg)
-
-            # Single flush for all messages - more efficient than flushing each message
-            producer.flush()
-
         except Exception as e:
             log.error("Failed to send messages to Kafka: %s", str(e))
-            raise
-        finally:
-            # Ensure producer is always closed, even on exceptions
-            if producer is not None:
+            # Close and discard the broken producer so the next retry
+            # creates a fresh connection.
+            if _kafka_producer is not None:
                 try:
-                    producer.close()
-                except Exception as e:
-                    log.warning("Error closing Kafka producer: %s", str(e))
+                    _kafka_producer.close()
+                except Exception:
+                    pass
+                _kafka_producer = None
+            raise
 
-    # Retry the send operation with exponential backoff
     _retry_with_backoff(_send)
 
 
