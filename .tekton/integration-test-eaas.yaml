@@ -77,6 +77,386 @@ spec:
     - name: ownerUid
       value: $(context.pipelineRun.uid)
 
+  - name: deploy-openldap
+    runAfter:
+    - provision-environment
+    taskSpec:
+      params:
+      - name: kubeconfig-secret
+        type: string
+      steps:
+      - name: create-openldap
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          KUBECONFIG=/tmp/kubeconfig
+          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+          export KUBECONFIG
+
+          echo "=========================================="
+          echo "Deploying LDAP Server (Python/ldaptor)"
+          echo "=========================================="
+
+          # Deploy a Python-based in-memory LDAP server using ldaptor.
+          # osixia/openldap:1.5.0 requires root and fails in OpenShift's
+          # restricted-v2 SCC.  ldaptor runs as an arbitrary UID on a
+          # non-privileged port (1389), so no SCC changes are needed.
+
+          kubectl apply -f - <<'EOFYAML'
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: ldap-server-script
+          data:
+            server.py: |
+              """
+              Minimal in-memory LDAP server using ldaptor.
+
+              Serves posixGroup entries under ou=groups,dc=example,dc=com with
+              anonymous-read access so that CTS's query_ldap_groups() can
+              retrieve group membership without a bind DN.
+              """
+              import io
+              from twisted.internet import reactor
+              from twisted.internet.protocol import ServerFactory
+              from twisted.python.components import registerAdapter
+              from ldaptor.inmemory import fromLDIFFile
+              from ldaptor.interfaces import IConnectedLDAPEntry
+              from ldaptor.protocols.ldap.ldapserver import LDAPServer
+
+              LDIF = b"""\
+              dn: dc=example,dc=com
+              dc: example
+              objectClass: top
+              objectClass: domain
+
+              dn: ou=groups,dc=example,dc=com
+              ou: groups
+              objectClass: top
+              objectClass: organizationalUnit
+
+              dn: cn=cts-builders,ou=groups,dc=example,dc=com
+              cn: cts-builders
+              objectClass: top
+              objectClass: posixGroup
+              gidNumber: 5501
+              memberUid: builder@example.com
+
+              dn: cn=readonly-users,ou=groups,dc=example,dc=com
+              cn: readonly-users
+              objectClass: top
+              objectClass: posixGroup
+              gidNumber: 5502
+              memberUid: readonly@example.com
+
+              """
+
+              class LDAPServerFactory(ServerFactory):
+                  protocol = LDAPServer
+
+                  def __init__(self, root):
+                      self.root = root
+
+                  def buildProtocol(self, addr):
+                      proto = self.protocol()
+                      proto.factory = self
+                      return proto
+
+              registerAdapter(
+                  lambda f: f.root, LDAPServerFactory, IConnectedLDAPEntry
+              )
+
+              def start(root):
+                  factory = LDAPServerFactory(root)
+                  reactor.listenTCP(1389, factory, interface="0.0.0.0")
+                  print("LDAP server listening on port 1389", flush=True)
+
+              d = fromLDIFFile(io.BytesIO(LDIF))
+              d.addCallback(start)
+              reactor.run()
+          EOFYAML
+
+          kubectl apply -f - <<'EOFYAML'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: openldap
+            labels:
+              app: openldap
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: openldap
+            template:
+              metadata:
+                labels:
+                  app: openldap
+              spec:
+                containers:
+                - name: openldap
+                  image: quay.io/konflux-ci/appstudio-utils:latest
+                  command: ["/bin/bash", "-c"]
+                  args:
+                  - |
+                    set -e
+                    export HOME=/tmp
+                    echo "Installing ldaptor and twisted..."
+                    python3 -m ensurepip
+                    python3 -m pip install --target /tmp/ldap-deps --quiet ldaptor twisted
+                    echo "Starting LDAP server..."
+                    export PYTHONPATH=/tmp/ldap-deps
+                    exec python3 /scripts/server.py
+                  ports:
+                  - containerPort: 1389
+                    name: ldap
+                  readinessProbe:
+                    tcpSocket:
+                      port: 1389
+                    initialDelaySeconds: 15
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 12
+                  resources:
+                    requests:
+                      memory: "128Mi"
+                      cpu: "50m"
+                    limits:
+                      memory: "256Mi"
+                      cpu: "200m"
+                  volumeMounts:
+                  - name: ldap-script
+                    mountPath: /scripts
+                    readOnly: true
+                volumes:
+                - name: ldap-script
+                  configMap:
+                    name: ldap-server-script
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: openldap
+            labels:
+              app: openldap
+          spec:
+            ports:
+            - port: 1389
+              targetPort: 1389
+              name: ldap
+            selector:
+              app: openldap
+          EOFYAML
+
+          echo "Waiting for LDAP server to be ready..."
+          if ! kubectl wait --for=condition=available --timeout=180s deployment/openldap; then
+            echo "LDAP deployment failed! Debug info:"
+            kubectl describe deployment openldap
+            kubectl describe pod -l app=openldap
+            kubectl logs -l app=openldap --tail=50 || echo "No logs available"
+            exit 1
+          fi
+          echo "✓ LDAP server is ready"
+    params:
+    - name: kubeconfig-secret
+      value: $(tasks.provision-environment.results.secretRef)
+
+  - name: deploy-dex
+    runAfter:
+    - provision-environment
+    taskSpec:
+      params:
+      - name: kubeconfig-secret
+        type: string
+      steps:
+      - name: create-dex
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          KUBECONFIG=/tmp/kubeconfig
+          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+          export KUBECONFIG
+
+          echo "=========================================="
+          echo "Generating Dex TLS certificate"
+          echo "=========================================="
+
+          # Generate a self-signed CA and Dex server certificate (SAN: DNS:dex)
+          # so that OIDCOAuthVerifyJwksUri can use https://dex:5556/keys
+          TMPDIR=$(mktemp -d)
+
+          # Generate CA key and cert
+          openssl genrsa -out "$TMPDIR/ca.key" 4096 2>/dev/null
+          openssl req -x509 -new -nodes -key "$TMPDIR/ca.key" \
+            -sha256 -days 365 \
+            -subj "/CN=dex-test-ca" \
+            -out "$TMPDIR/ca.crt" 2>/dev/null
+
+          # Generate Dex server key and CSR
+          openssl genrsa -out "$TMPDIR/dex.key" 4096 2>/dev/null
+          openssl req -new -key "$TMPDIR/dex.key" \
+            -subj "/CN=dex" \
+            -out "$TMPDIR/dex.csr" 2>/dev/null
+
+          # Sign the Dex cert with the CA, adding SAN for DNS:dex
+          cat > "$TMPDIR/dex.ext" <<'EXTEOF'
+          [SAN]
+          subjectAltName=DNS:dex
+          EXTEOF
+          openssl x509 -req -in "$TMPDIR/dex.csr" \
+            -CA "$TMPDIR/ca.crt" -CAkey "$TMPDIR/ca.key" -CAcreateserial \
+            -out "$TMPDIR/dex.crt" -days 365 -sha256 \
+            -extfile "$TMPDIR/dex.ext" -extensions SAN 2>/dev/null
+
+          # Store CA cert and Dex TLS cert/key in Kubernetes Secrets
+          kubectl create secret generic dex-tls \
+            --from-file=tls.crt="$TMPDIR/dex.crt" \
+            --from-file=tls.key="$TMPDIR/dex.key"
+
+          kubectl create secret generic dex-ca \
+            --from-file=ca.crt="$TMPDIR/ca.crt"
+
+          rm -rf "$TMPDIR"
+          echo "✓ Dex TLS certificate generated"
+
+          echo "=========================================="
+          echo "Deploying Dex OIDC Provider"
+          echo "=========================================="
+
+          kubectl apply -f - <<'EOFYAML'
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: dex-config
+          data:
+            config.yaml: |
+              issuer: https://dex:5556
+
+              storage:
+                type: memory
+
+              web:
+                https: 0.0.0.0:5556
+                tlsCert: /etc/dex/tls/tls.crt
+                tlsKey: /etc/dex/tls/tls.key
+
+              logger:
+                level: debug
+
+              enablePasswordDB: true
+
+              staticPasswords:
+              - email: builder@example.com
+                hash: "$2y$10$6cZyh42YBb2Q5.fE9nj3mu3UHs21NUmVP2fpU63EM3/ecJuHVscEC"
+                username: builder
+                userID: "builder"
+              - email: readonly@example.com
+                hash: "$2y$10$6cZyh42YBb2Q5.fE9nj3mu3UHs21NUmVP2fpU63EM3/ecJuHVscEC"
+                username: readonly
+                userID: "readonly"
+
+              staticClients:
+              - id: cts-integration
+                secret: cts-integration-secret
+                name: CTS Integration
+                redirectURIs:
+                - http://cts:8080/redirect_uri
+                grantTypes:
+                - password
+                - authorization_code
+
+              oauth2:
+                skipApprovalScreen: true
+                passwordConnector: local
+          EOFYAML
+
+          kubectl apply -f - <<'EOFYAML'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: dex
+            labels:
+              app: dex
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: dex
+            template:
+              metadata:
+                labels:
+                  app: dex
+              spec:
+                containers:
+                - name: dex
+                  image: ghcr.io/dexidp/dex:v2.41.1
+                  args: ["dex", "serve", "/etc/dex/config.yaml"]
+                  ports:
+                  - containerPort: 5556
+                    name: https
+                  resources:
+                    requests:
+                      memory: "64Mi"
+                      cpu: "50m"
+                    limits:
+                      memory: "256Mi"
+                      cpu: "500m"
+                  readinessProbe:
+                    httpGet:
+                      path: /.well-known/openid-configuration
+                      port: 5556
+                      scheme: HTTPS
+                    initialDelaySeconds: 5
+                    periodSeconds: 5
+                    timeoutSeconds: 5
+                    failureThreshold: 12
+                  volumeMounts:
+                  - name: dex-config
+                    mountPath: /etc/dex
+                    readOnly: true
+                  - name: dex-tls
+                    mountPath: /etc/dex/tls
+                    readOnly: true
+                volumes:
+                - name: dex-config
+                  configMap:
+                    name: dex-config
+                - name: dex-tls
+                  secret:
+                    secretName: dex-tls
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: dex
+            labels:
+              app: dex
+          spec:
+            ports:
+            - port: 5556
+              targetPort: 5556
+              name: https
+            selector:
+              app: dex
+          EOFYAML
+
+          echo "Waiting for Dex to be ready..."
+          if ! kubectl wait --for=condition=available --timeout=180s deployment/dex; then
+            echo "Dex deployment failed! Debug info:"
+            kubectl describe deployment dex
+            kubectl describe pod -l app=dex
+            kubectl logs -l app=dex --tail=50 || echo "No logs available"
+            exit 1
+          fi
+          echo "✓ Dex is ready"
+    params:
+    - name: kubeconfig-secret
+      value: $(tasks.provision-environment.results.secretRef)
+
   - name: deploy-database
     runAfter:
     - provision-environment
@@ -215,6 +595,8 @@ spec:
   - name: deploy-cts
     runAfter:
     - deploy-database
+    - deploy-openldap
+    - deploy-dex
     taskSpec:
       params:
       - name: kubeconfig-secret
@@ -241,7 +623,7 @@ spec:
           echo "Image: $IMAGE"
 
           # Create ConfigMap with production configuration and httpd config for CTS
-          kubectl apply -f - <<EOF
+          kubectl apply -f - <<'EOFYAML'
           apiVersion: v1
           kind: ConfigMap
           metadata:
@@ -251,8 +633,16 @@ spec:
               from conf.config import BaseConfiguration
 
               class ProdConfiguration(BaseConfiguration):
-                  AUTH_BACKEND = "noauth"
+                  AUTH_BACKEND = "oidc_or_kerberos"
                   SQLALCHEMY_DATABASE_URI = "postgresql://cts:cts-test@cts-db:5432/cts"
+                  AUTH_OPENIDC_USERINFO_URI = "https://dex:5556/userinfo"
+                  AUTH_OPENIDC_REQUIRED_SCOPES = ["openid"]
+                  AUTH_LDAP_SERVER = "ldap://openldap:1389"
+                  AUTH_LDAP_GROUPS = [
+                      ("ou=groups,dc=example,dc=com", "(&(objectClass=posixGroup)(memberUid={0}))"),
+                  ]
+                  ADMINS = {"groups": [], "users": ["builder@example.com"]}
+                  ALLOWED_BUILDERS = {"groups": [], "users": ["builder@example.com"]}
             httpd.conf: |
               ServerRoot "/etc/httpd"
               PidFile /tmp/httpd.pid
@@ -268,6 +658,17 @@ spec:
 
               Include conf.modules.d/*.conf
 
+              OIDCProviderMetadataURL https://dex:5556/.well-known/openid-configuration
+              OIDCClientID cts-integration
+              OIDCClientSecret cts-integration-secret
+              OIDCRedirectURI http://cts:8080/redirect_uri
+              OIDCCryptoPassphrase changeme
+              OIDCRemoteUserClaim preferred_username
+              OIDCCABundlePath /etc/dex-ca/ca.crt
+              OIDCOAuthVerifyJwksUri https://dex:5556/keys
+              OIDCOAuthRemoteUserClaim email
+              OIDCUnAuthAction pass
+
               WSGISocketPrefix /tmp/wsgi
               WSGIDaemonProcess cts threads=5 home=/usr/share/cts
               WSGIScriptAlias / /usr/share/cts/cts.wsgi
@@ -275,8 +676,28 @@ spec:
               <Directory /usr/share/cts>
                   WSGIProcessGroup cts
                   WSGIApplicationGroup %{GLOBAL}
+                  <If "%{HTTP:Authorization} =~ /^Bearer/">
+                      AuthType auth-openidc
+                      # Dex access tokens do not include a scope claim in the JWT payload.
+                      # Inject it here so load_openidc_user's validate_scopes() check passes.
+                      # Scoped to Bearer requests only so that Kerberos requests (which lack
+                      # OIDC_ environ variables) are still routed to load_krb_user_from_request
+                      # by load_oidc_or_krb_user_from_request instead of always hitting the
+                      # OIDC branch.
+                      SetEnv OIDC_CLAIM_scope "openid email"
+                  </If>
+                  <Else>
+                      AuthType openid-connect
+                  </Else>
+                  <RequireAny>
+                      <RequireAll>
+                          Require expr %{REQUEST_URI} !~ /userinfo/
+                          Require method GET
+                      </RequireAll>
+                      Require valid-user
+                  </RequireAny>
               </Directory>
-          EOF
+          EOFYAML
 
           # Deploy CTS
           kubectl apply -f - <<EOF
@@ -332,9 +753,14 @@ spec:
                   command:
                   - /bin/bash
                   - -c
-                  - exec httpd -DFOREGROUND -f /etc/cts/httpd.conf
+                  - |
+                    set -e
+                    exec httpd -DFOREGROUND -f /etc/cts/httpd.conf
                   ports:
                   - containerPort: 8080
+                  env:
+                  - name: REQUESTS_CA_BUNDLE
+                    value: /etc/dex-ca/ca.crt
                   resources:
                     requests:
                       memory: "256Mi"
@@ -361,10 +787,16 @@ spec:
                   - name: cts-config
                     mountPath: /etc/cts
                     readOnly: true
+                  - name: dex-ca
+                    mountPath: /etc/dex-ca
+                    readOnly: true
                 volumes:
                 - name: cts-config
                   configMap:
                     name: cts-config
+                - name: dex-ca
+                  secret:
+                    secretName: dex-ca
           EOF
 
           echo "Waiting for CTS service to be ready..."
@@ -453,6 +885,9 @@ spec:
 
           echo "Creating test runner pod in namespace: $NAMESPACE"
 
+          # Retrieve the Dex CA cert so the test runner pod can trust Dex over HTTPS
+          DEX_CA_B64=$(kubectl get secret dex-ca -o jsonpath='{.data.ca\.crt}')
+
           # Create a test runner pod in the target namespace (using appstudio-utils which has git and python)
           kubectl run cts-test-runner \
             --image=quay.io/konflux-ci/appstudio-utils:latest \
@@ -478,9 +913,12 @@ spec:
             set -ex
             export HOME=/tmp
 
-            echo 'Installing pytest...'
+            echo 'Installing Dex CA certificate...'
+            echo '$DEX_CA_B64' | base64 -d > /tmp/dex-ca.crt
+
+            echo 'Installing pytest and requests...'
             python3 -m ensurepip
-            python3 -m pip install --user pytest
+            python3 -m pip install --target /tmp/test-deps --quiet pytest requests
 
             echo ''
             echo 'Cloning repository...'
@@ -492,7 +930,7 @@ spec:
 
             echo ''
             echo 'Running pytest...'
-            CTS_URL=http://cts:8080 python3 -m pytest tests/test_integration_api.py -v -s -o addopts=
+            PYTHONPATH=/tmp/test-deps REQUESTS_CA_BUNDLE=/tmp/dex-ca.crt CTS_URL=http://cts:8080 AUTH_BACKEND=oidc_or_kerberos DEX_URL=https://dex:5556 python3 -m pytest tests/test_integration_api.py -v -s -o addopts=
           "
           TEST_RESULT=$?
           set -e
