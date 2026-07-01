@@ -44,10 +44,14 @@ class HTTPClient:
     def __init__(self, base_url):
         self.base_url = base_url.rstrip("/")
 
+    def _prepare_request(self, req):
+        """Hook for subclasses to modify the request before it is sent."""
+
     def _request(self, method, path, json_data=None):
         """Make HTTP request with specified method"""
         url = f"{self.base_url}{path}"
         req = Request(url, method=method)
+        self._prepare_request(req)
         if json_data:
             req.add_header("Content-Type", "application/json")
             req.data = json.dumps(json_data).encode("utf-8")
@@ -96,32 +100,8 @@ class AuthHTTPClient(HTTPClient):
         super().__init__(base_url)
         self.token = token
 
-    def _request(self, method, path, json_data=None):
-        url = f"{self.base_url}{path}"
-        req = Request(url, method=method)
+    def _prepare_request(self, req):
         req.add_header("Authorization", f"Bearer {self.token}")
-        if json_data:
-            req.add_header("Content-Type", "application/json")
-            req.data = json.dumps(json_data).encode("utf-8")
-
-        try:
-            with urlopen(req, timeout=10) as response:
-                data = response.read()
-                if response.headers.get("Content-Type", "").startswith(
-                    "application/json"
-                ):
-                    return response.status, json.loads(data)
-                return response.status, data.decode("utf-8")
-        except HTTPError as e:
-            try:
-                error_data = e.read()
-                if e.headers.get("Content-Type", "").startswith("application/json"):
-                    return e.code, json.loads(error_data)
-                return e.code, error_data.decode("utf-8")
-            except Exception:
-                return e.code, None
-        except URLError as e:
-            raise Exception(f"Failed to connect to {url}: {e}")
 
 
 def _get_oidc_token(username, password):
