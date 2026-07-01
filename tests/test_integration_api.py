@@ -574,9 +574,6 @@ def test_auth_unauthenticated_write_returns_401(http_client):
 
 def test_auth_builder_can_post_compose(auth_http_client_builder):
     """Authenticated 'builder' user (in ALLOWED_BUILDERS) can POST a compose."""
-    if not _is_oidc_backend():
-        pytest.skip("OIDC auth tests require AUTH_BACKEND=openidc or oidc_or_kerberos")
-
     compose_info = _create_compose_info("AuthBuilderTest", "1.0", "20260101")
     status, data = auth_http_client_builder.post(
         "/api/1/composes/", {"compose_info": compose_info}
@@ -593,9 +590,6 @@ def test_auth_builder_can_post_compose(auth_http_client_builder):
 
 def test_auth_unauthorized_user_returns_403(auth_http_client_readonly):
     """Authenticated 'readonly' user (not in ALLOWED_BUILDERS) gets 403 on write endpoints."""
-    if not _is_oidc_backend():
-        pytest.skip("OIDC auth tests require AUTH_BACKEND=openidc or oidc_or_kerberos")
-
     compose_info = _create_compose_info("AuthReadonlyTest", "1.0", "20260101")
     status, data = auth_http_client_readonly.post(
         "/api/1/composes/", {"compose_info": compose_info}
@@ -609,9 +603,6 @@ def test_auth_unauthorized_user_returns_403(auth_http_client_readonly):
 
 def test_auth_get_endpoints_accessible_without_token(http_client):
     """GET endpoints remain accessible without authentication (mod_auth_openidc pass-through)."""
-    if not _is_oidc_backend():
-        pytest.skip("OIDC auth tests require AUTH_BACKEND=openidc or oidc_or_kerberos")
-
     # Listing composes must work without a token
     status, data = http_client.get("/api/1/composes/")
     assert (
