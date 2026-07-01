@@ -77,7 +77,7 @@ spec:
     - name: ownerUid
       value: $(context.pipelineRun.uid)
 
-  - name: deploy-openldap
+  - name: deploy-glauth
     runAfter:
     - provision-environment
     taskSpec:
@@ -85,7 +85,7 @@ spec:
       - name: kubeconfig-secret
         type: string
       steps:
-      - name: create-openldap
+      - name: create-glauth
         image: quay.io/konflux-ci/appstudio-utils:latest
         script: |
           #!/usr/bin/env bash
@@ -96,169 +96,137 @@ spec:
           export KUBECONFIG
 
           echo "=========================================="
-          echo "Deploying LDAP Server (Python/ldaptor)"
+          echo "Deploying GLAuth LDAP Server"
           echo "=========================================="
 
-          # Deploy a Python-based in-memory LDAP server using ldaptor.
-          # osixia/openldap:1.5.0 requires root and fails in OpenShift's
-          # restricted-v2 SCC.  ldaptor runs as an arbitrary UID on a
-          # non-privileged port (1389), so no SCC changes are needed.
+          # GLAuth is a lightweight Go-based LDAP server.
+          # It runs as an arbitrary UID on non-privileged ports,
+          # so no SCC changes are needed in OpenShift's restricted-v2 SCC.
+          # Password hash: echo -n "password" | sha256sum
+          # 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
 
           kubectl apply -f - <<'EOFYAML'
           apiVersion: v1
           kind: ConfigMap
           metadata:
-            name: ldap-server-script
+            name: glauth-config
           data:
-            server.py: |
-              """
-              Minimal in-memory LDAP server using ldaptor.
+            glauth.cfg: |
+              [ldap]
+                enabled = true
+                listen = "0.0.0.0:3893"
+                tls = false
 
-              Serves posixGroup entries under ou=groups,dc=example,dc=com with
-              anonymous-read access so that CTS's query_ldap_groups() can
-              retrieve group membership without a bind DN.
-              """
-              import io
-              from twisted.internet import reactor
-              from twisted.internet.protocol import ServerFactory
-              from twisted.python.components import registerAdapter
-              from ldaptor.inmemory import fromLDIFFile
-              from ldaptor.interfaces import IConnectedLDAPEntry
-              from ldaptor.protocols.ldap.ldapserver import LDAPServer
+              [ldaps]
+                enabled = false
 
-              LDIF = b"""\
-              dn: dc=example,dc=com
-              dc: example
-              objectClass: top
-              objectClass: domain
+              [backend]
+                datastore = "config"
+                baseDN = "dc=glauth,dc=com"
 
-              dn: ou=groups,dc=example,dc=com
-              ou: groups
-              objectClass: top
-              objectClass: organizationalUnit
+              [behaviors]
+                IgnoreCapabilities = true
 
-              dn: cn=cts-builders,ou=groups,dc=example,dc=com
-              cn: cts-builders
-              objectClass: top
-              objectClass: posixGroup
-              gidNumber: 5501
-              memberUid: builder@example.com
+              [[users]]
+                name = "builder"
+                mail = "builder@example.com"
+                uidnumber = 5001
+                primarygroup = 5501
+                passsha256 = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
+                  [[users.capabilities]]
+                  action = "search"
+                  object = "*"
 
-              dn: cn=readonly-users,ou=groups,dc=example,dc=com
-              cn: readonly-users
-              objectClass: top
-              objectClass: posixGroup
-              gidNumber: 5502
-              memberUid: readonly@example.com
+              [[users]]
+                name = "readonly"
+                mail = "readonly@example.com"
+                uidnumber = 5002
+                primarygroup = 5502
+                passsha256 = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
+                  [[users.capabilities]]
+                  action = "search"
+                  object = "*"
 
-              """
+              [[groups]]
+                name = "cts-builders"
+                gidnumber = 5501
 
-              class LDAPServerFactory(ServerFactory):
-                  protocol = LDAPServer
-
-                  def __init__(self, root):
-                      self.root = root
-
-                  def buildProtocol(self, addr):
-                      proto = self.protocol()
-                      proto.factory = self
-                      return proto
-
-              registerAdapter(
-                  lambda f: f.root, LDAPServerFactory, IConnectedLDAPEntry
-              )
-
-              def start(root):
-                  factory = LDAPServerFactory(root)
-                  reactor.listenTCP(1389, factory, interface="0.0.0.0")
-                  print("LDAP server listening on port 1389", flush=True)
-
-              d = fromLDIFFile(io.BytesIO(LDIF))
-              d.addCallback(start)
-              reactor.run()
+              [[groups]]
+                name = "readonly-users"
+                gidnumber = 5502
           EOFYAML
 
           kubectl apply -f - <<'EOFYAML'
           apiVersion: apps/v1
           kind: Deployment
           metadata:
-            name: openldap
+            name: glauth
             labels:
-              app: openldap
+              app: glauth
           spec:
             replicas: 1
             selector:
               matchLabels:
-                app: openldap
+                app: glauth
             template:
               metadata:
                 labels:
-                  app: openldap
+                  app: glauth
               spec:
                 containers:
-                - name: openldap
-                  image: quay.io/konflux-ci/appstudio-utils:latest
-                  command: ["/bin/bash", "-c"]
-                  args:
-                  - |
-                    set -e
-                    export HOME=/tmp
-                    echo "Installing ldaptor and twisted..."
-                    python3 -m ensurepip
-                    python3 -m pip install --target /tmp/ldap-deps --quiet ldaptor twisted
-                    echo "Starting LDAP server..."
-                    export PYTHONPATH=/tmp/ldap-deps
-                    exec python3 /scripts/server.py
+                - name: glauth
+                  image: glauth/glauth:v2.5.0
+                  args: ["-c", "/etc/glauth/glauth.cfg"]
                   ports:
-                  - containerPort: 1389
+                  - containerPort: 3893
                     name: ldap
                   readinessProbe:
                     tcpSocket:
-                      port: 1389
-                    initialDelaySeconds: 15
+                      port: 3893
+                    initialDelaySeconds: 5
                     periodSeconds: 5
                     timeoutSeconds: 3
                     failureThreshold: 12
                   resources:
                     requests:
-                      memory: "128Mi"
+                      memory: "64Mi"
                       cpu: "50m"
                     limits:
-                      memory: "256Mi"
+                      memory: "128Mi"
                       cpu: "200m"
                   volumeMounts:
-                  - name: ldap-script
-                    mountPath: /scripts
+                  - name: glauth-config
+                    mountPath: /etc/glauth
                     readOnly: true
                 volumes:
-                - name: ldap-script
+                - name: glauth-config
                   configMap:
-                    name: ldap-server-script
+                    name: glauth-config
           ---
           apiVersion: v1
           kind: Service
           metadata:
-            name: openldap
+            name: glauth
             labels:
-              app: openldap
+              app: glauth
           spec:
             ports:
-            - port: 1389
-              targetPort: 1389
+            - port: 3893
+              targetPort: 3893
               name: ldap
             selector:
-              app: openldap
+              app: glauth
           EOFYAML
 
-          echo "Waiting for LDAP server to be ready..."
-          if ! kubectl wait --for=condition=available --timeout=180s deployment/openldap; then
-            echo "LDAP deployment failed! Debug info:"
-            kubectl describe deployment openldap
-            kubectl describe pod -l app=openldap
-            kubectl logs -l app=openldap --tail=50 || echo "No logs available"
+          echo "Waiting for GLAuth to be ready..."
+          if ! kubectl wait --for=condition=available --timeout=180s deployment/glauth; then
+            echo "GLAuth deployment failed! Debug info:"
+            kubectl describe deployment glauth
+            kubectl describe pod -l app=glauth
+            kubectl logs -l app=glauth --tail=50 || echo "No logs available"
             exit 1
           fi
-          echo "✓ LDAP server is ready"
+          echo "✓ GLAuth LDAP server is ready"
     params:
     - name: kubeconfig-secret
       value: $(tasks.provision-environment.results.secretRef)
@@ -595,7 +563,7 @@ spec:
   - name: deploy-cts
     runAfter:
     - deploy-database
-    - deploy-openldap
+    - deploy-glauth
     - deploy-dex
     taskSpec:
       params:
@@ -637,12 +605,12 @@ spec:
                   SQLALCHEMY_DATABASE_URI = "postgresql://cts:cts-test@cts-db:5432/cts"
                   AUTH_OPENIDC_USERINFO_URI = "https://dex:5556/userinfo"
                   AUTH_OPENIDC_REQUIRED_SCOPES = ["openid"]
-                  AUTH_LDAP_SERVER = "ldap://openldap:1389"
+                  AUTH_LDAP_SERVER = "ldap://glauth:3893"
                   AUTH_LDAP_GROUPS = [
-                      ("ou=groups,dc=example,dc=com", "(&(objectClass=posixGroup)(memberUid={0}))"),
+                      ("ou=groups,dc=glauth,dc=com", "(&(objectClass=posixGroup)(memberUid={0}))"),
                   ]
-                  ADMINS = {"groups": [], "users": ["builder@example.com"]}
-                  ALLOWED_BUILDERS = {"groups": [], "users": ["builder@example.com"]}
+                  ADMINS = {"groups": [], "users": ["builder"]}
+                  ALLOWED_BUILDERS = {"groups": [], "users": ["builder"]}
             httpd.conf: |
               ServerRoot "/etc/httpd"
               PidFile /tmp/httpd.pid
@@ -666,7 +634,7 @@ spec:
               OIDCRemoteUserClaim preferred_username
               OIDCCABundlePath /etc/dex-ca/ca.crt
               OIDCOAuthVerifyJwksUri https://dex:5556/keys
-              OIDCOAuthRemoteUserClaim email
+              OIDCOAuthRemoteUserClaim preferred_username
               OIDCUnAuthAction pass
 
               WSGISocketPrefix /tmp/wsgi
