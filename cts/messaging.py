@@ -102,9 +102,15 @@ def _kafka_send_msg(msgs):
 
     def _send():
         """Inner function to send messages (will be retried on failure)"""
+        compression = conf.messaging_kafka_compression_type
+        # kafka-python uses Python None to mean "no compression"; the string
+        # "none" (which may come from a config file) is not accepted.
+        if compression and compression.lower() == "none":
+            compression = None
+
         config = {
             "bootstrap_servers": conf.messaging_broker_urls,
-            "compression_type": conf.messaging_kafka_compression_type,
+            "compression_type": compression,
             "security_protocol": conf.messaging_kafka_security_protocol,
             "sasl_mechanism": conf.messaging_kafka_sasl_mechanism,
             "sasl_plain_username": conf.messaging_kafka_username,

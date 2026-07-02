@@ -243,9 +243,19 @@ def create_tag(http_client, name, description, documentation):
 
 
 def import_compose(
-    http_client, release_short, release_version, date, compose_type="test", respin=1
+    http_client,
+    release_short,
+    release_version,
+    date,
+    compose_type="test",
+    respin=1,
+    kafka_consumer=None,
 ):
-    """Import a compose and return the response data"""
+    """Import a compose and return the response data.
+
+    When *kafka_consumer* is supplied, also verifies that CTS published a
+    ``compose-created`` message on the ``cts.compose-created`` topic.
+    """
     compose_info = _create_compose_info(
         release_short, release_version, date, compose_type, respin
     )
@@ -254,26 +264,65 @@ def import_compose(
     assert isinstance(data, dict)
     assert "payload" in data
     assert "compose" in data["payload"]
+    if kafka_consumer is not None:
+        compose_id = data["payload"]["compose"]["id"]
+        msg = _consume_one(kafka_consumer, "cts.compose-created")
+        assert (
+            msg.get("event") == "compose-created"
+        ), f"Expected event='compose-created', got event={msg.get('event')!r}"
+        assert msg.get("compose") is not None, f"Message missing 'compose' key: {msg}"
+        compose_info_data = msg["compose"].get("compose_info", {})
+        assert compose_id in str(
+            compose_info_data
+        ), f"Message compose_info does not reference compose {compose_id}: {msg}"
     return data
 
 
-def tag_compose(http_client, compose_id, tag_name):
-    """Tag a compose and return the response data"""
+def tag_compose(http_client, compose_id, tag_name, kafka_consumer=None):
+    """Tag a compose and return the response data.
+
+    When *kafka_consumer* is supplied, also verifies that CTS published a
+    ``compose-tagged`` message on the ``cts.compose-tagged`` topic.
+    """
     status, data = http_client.patch(
         f"/api/1/composes/{compose_id}", {"action": "tag", "tag": tag_name}
     )
     assert status == 200, f"Failed to tag compose: {data}"
     assert tag_name in data.get("tags", [])
+    if kafka_consumer is not None:
+        msg = _consume_one(kafka_consumer, "cts.compose-tagged")
+        assert (
+            msg.get("event") == "compose-tagged"
+        ), f"Expected event='compose-tagged', got event={msg.get('event')!r}"
+        assert msg.get("compose") is not None, f"Message missing 'compose' key: {msg}"
+        compose_info_data = msg["compose"].get("compose_info", {})
+        assert compose_id in str(
+            compose_info_data
+        ), f"Message compose_info does not reference compose {compose_id}: {msg}"
     return data
 
 
-def untag_compose(http_client, compose_id, tag_name):
-    """Untag a compose and return the response data"""
+def untag_compose(http_client, compose_id, tag_name, kafka_consumer=None):
+    """Untag a compose and return the response data.
+
+    When *kafka_consumer* is supplied, also verifies that CTS published a
+    ``compose-untagged`` message on the ``cts.compose-untagged`` topic.
+    """
     status, data = http_client.patch(
         f"/api/1/composes/{compose_id}", {"action": "untag", "tag": tag_name}
     )
     assert status == 200, f"Failed to untag compose: {data}"
     assert tag_name not in data.get("tags", [])
+    if kafka_consumer is not None:
+        msg = _consume_one(kafka_consumer, "cts.compose-untagged")
+        assert (
+            msg.get("event") == "compose-untagged"
+        ), f"Expected event='compose-untagged', got event={msg.get('event')!r}"
+        assert msg.get("compose") is not None, f"Message missing 'compose' key: {msg}"
+        compose_info_data = msg["compose"].get("compose_info", {})
+        assert compose_id in str(
+            compose_info_data
+        ), f"Message compose_info does not reference compose {compose_id}: {msg}"
     return data
 
 
@@ -348,13 +397,18 @@ def test_composes_list(http_client):
     print(f"  Found {len(data['items'])} composes")
 
 
-def test_composes_pagination(write_http_client):
+def test_composes_pagination(write_http_client, kafka_consumer):
     """Test that pagination parameters work correctly"""
-    # Import 3 test composes
+    # Import 3 test composes.  Pass kafka_consumer so that each compose-created
+    # message is asserted as part of this test.
     compose_ids = []
     for i in range(1, 4):
         response = import_compose(
-            write_http_client, "PaginationTest", "1.0", f"2025010{i}"
+            write_http_client,
+            "PaginationTest",
+            "1.0",
+            f"2025010{i}",
+            kafka_consumer=kafka_consumer,
         )
         compose_ids.append(response["payload"]["compose"]["id"])
 
@@ -462,29 +516,53 @@ def test_workflow_tag_creation(write_http_client):
     print("  ✓ Tag creation and tagger/untagger management completed successfully")
 
 
-def test_workflow_compose_import(write_http_client):
+def test_workflow_compose_import(write_http_client, kafka_consumer):
     """Test importing a compose"""
-    data = import_compose(write_http_client, "IntegrationTest", "1.0", "20250101")
+    data = import_compose(
+        write_http_client,
+        "IntegrationTest",
+        "1.0",
+        "20250101",
+        kafka_consumer=kafka_consumer,
+    )
     compose_id = data["payload"]["compose"]["id"]
     print(f"  Imported compose: {compose_id}")
 
 
-def test_workflow_respin_increment(write_http_client):
+def test_workflow_respin_increment(write_http_client, kafka_consumer):
     """Test that respin numbers are automatically incremented for duplicate composes"""
     # Import first compose
-    response1 = import_compose(write_http_client, "RespinTest", "1.0", "20250102")
+    response1 = import_compose(
+        write_http_client,
+        "RespinTest",
+        "1.0",
+        "20250102",
+        kafka_consumer=kafka_consumer,
+    )
     compose_id1 = response1["payload"]["compose"]["id"]
     respin1 = response1["payload"]["compose"]["respin"]
     print(f"  1. First compose: {compose_id1} (respin: {respin1})")
 
     # Import second compose with same release/date - respin should auto-increment
-    response2 = import_compose(write_http_client, "RespinTest", "1.0", "20250102")
+    response2 = import_compose(
+        write_http_client,
+        "RespinTest",
+        "1.0",
+        "20250102",
+        kafka_consumer=kafka_consumer,
+    )
     compose_id2 = response2["payload"]["compose"]["id"]
     respin2 = response2["payload"]["compose"]["respin"]
     print(f"  2. Second compose: {compose_id2} (respin: {respin2})")
 
     # Import third compose - respin should increment again
-    response3 = import_compose(write_http_client, "RespinTest", "1.0", "20250102")
+    response3 = import_compose(
+        write_http_client,
+        "RespinTest",
+        "1.0",
+        "20250102",
+        kafka_consumer=kafka_consumer,
+    )
     compose_id3 = response3["payload"]["compose"]["id"]
     respin3 = response3["payload"]["compose"]["respin"]
     print(f"  3. Third compose: {compose_id3} (respin: {respin3})")
@@ -505,7 +583,7 @@ def test_workflow_respin_increment(write_http_client):
     print(f"  ✓ Respin auto-increment verified: {respin1} → {respin2} → {respin3}")
 
 
-def test_workflow_full_lifecycle(write_http_client):
+def test_workflow_full_lifecycle(write_http_client, kafka_consumer):
     """Test complete workflow: create tag, import compose, tag it, untag it"""
     # Step 1: Create a tag
     tag_response = create_tag(
@@ -520,7 +598,11 @@ def test_workflow_full_lifecycle(write_http_client):
 
     # Step 2: Import a compose
     compose_response = import_compose(
-        write_http_client, "WorkflowTest", "1.0", "20250101"
+        write_http_client,
+        "WorkflowTest",
+        "1.0",
+        "20250101",
+        kafka_consumer=kafka_consumer,
     )
     compose_id = compose_response["payload"]["compose"]["id"]
     print(f"  2. Imported compose: {compose_id}")
@@ -533,7 +615,9 @@ def test_workflow_full_lifecycle(write_http_client):
     print(f"  3. Initial tags: {initial_tags}")
 
     # Step 3: Tag the compose
-    tag_result = tag_compose(write_http_client, compose_id, tag_name)
+    tag_result = tag_compose(
+        write_http_client, compose_id, tag_name, kafka_consumer=kafka_consumer
+    )
     print(f"  4. Tagged compose with '{tag_name}': {tag_result.get('tags', [])}")
 
     # Step 4: Verify tag was applied
@@ -543,7 +627,9 @@ def test_workflow_full_lifecycle(write_http_client):
     print(f"  5. Verified tags: {compose_data.get('tags', [])}")
 
     # Step 5: Untag the compose
-    untag_result = untag_compose(write_http_client, compose_id, tag_name)
+    untag_result = untag_compose(
+        write_http_client, compose_id, tag_name, kafka_consumer=kafka_consumer
+    )
     print(f"  6. Untagged compose: {untag_result.get('tags', [])}")
 
     # Step 6: Verify tag was removed
@@ -572,7 +658,7 @@ def test_auth_unauthenticated_write_returns_401(http_client):
     assert status != 200, "Unauthenticated write must not succeed"
 
 
-def test_auth_builder_can_post_compose(auth_http_client_builder):
+def test_auth_builder_can_post_compose(auth_http_client_builder, kafka_consumer):
     """Authenticated 'builder' user (in ALLOWED_BUILDERS) can POST a compose."""
     compose_info = _create_compose_info("AuthBuilderTest", "1.0", "20260101")
     status, data = auth_http_client_builder.post(
@@ -586,6 +672,16 @@ def test_auth_builder_can_post_compose(auth_http_client_builder):
     assert "compose" in data["payload"]
     compose_id = data["payload"]["compose"]["id"]
     assert compose_id, "Compose ID must be non-empty"
+    if kafka_consumer is not None:
+        msg = _consume_one(kafka_consumer, "cts.compose-created")
+        assert (
+            msg.get("event") == "compose-created"
+        ), f"Expected event='compose-created', got event={msg.get('event')!r}"
+        assert msg.get("compose") is not None, f"Message missing 'compose' key: {msg}"
+        compose_info_data = msg["compose"].get("compose_info", {})
+        assert compose_id in str(
+            compose_info_data
+        ), f"Message compose_info does not reference compose {compose_id}: {msg}"
 
 
 def test_auth_unauthorized_user_returns_403(auth_http_client_readonly):
@@ -616,3 +712,158 @@ def test_auth_get_endpoints_accessible_without_token(http_client):
         status == 200
     ), f"Expected 200 for unauthenticated GET /api/1/tags/, got {status}"
     assert isinstance(data, dict), "GET /api/1/tags/ must return a dict"
+
+
+# Kafka messaging helpers
+# These helpers integrate Kafka assertions into existing workflow tests.
+# Assertions are active only when KAFKA_URL is set; the tests run in either case.
+
+_KAFKA_CONSUMER_TIMEOUT_MS = int(os.environ.get("KAFKA_CONSUMER_TIMEOUT_MS", 30000))
+
+# Topics that CTS publishes to.
+_CTS_KAFKA_TOPICS = [
+    "cts.compose-created",
+    "cts.compose-tagged",
+    "cts.compose-untagged",
+]
+
+
+def _make_json_deserializer():
+    """Return a ``kafka.serializer.Deserializer`` subclass for JSON messages.
+
+    We import ``kafka.serializer.Deserializer`` lazily (inside the function) so
+    that the rest of the test module can be imported even when ``kafka-python``
+    is not installed.  Subclassing the ABC causes ``isinstance`` to return True
+    in ``KafkaConsumer.__init__``, which prevents the consumer from wrapping our
+    class in ``DeserializeWrapper`` — the wrapper treats the deserializer as a
+    plain callable and breaks when it is not one.
+    """
+    from kafka.serializer import Deserializer
+
+    class _JsonDeserializer(Deserializer):
+        def deserialize(self, topic, headers, data):
+            return json.loads(data.decode("utf-8"))
+
+        def close(self):
+            pass
+
+    return _JsonDeserializer()
+
+
+@pytest.fixture(scope="module")
+def kafka_consumer():
+    """Return a long-lived KafkaConsumer subscribed to all CTS topics.
+
+    The consumer is positioned at the *current* end of each topic when the
+    module starts, so it only sees messages produced during this test run.  It
+    acts as a cursor: each call to ``_consume_one`` advances the position
+    forward, making offset tracking unnecessary.
+
+    Returns ``None`` when ``KAFKA_URL`` is not set.  All Kafka-aware helpers
+    and tests check for ``None`` and skip their assertions accordingly, so the
+    full test suite runs in environments without a Kafka broker.
+    """
+    kafka_url = os.environ.get("KAFKA_URL")
+    if not kafka_url:
+        yield None
+        return
+
+    from kafka import KafkaConsumer, TopicPartition
+    from kafka.errors import KafkaConnectionError, KafkaTimeoutError
+
+    try:
+        consumer = KafkaConsumer(
+            bootstrap_servers=kafka_url,
+            # No group_id: we use manual partition assignment, so the
+            # group-coordinator protocol is not needed.
+            group_id=None,
+            value_deserializer=_make_json_deserializer(),
+            consumer_timeout_ms=_KAFKA_CONSUMER_TIMEOUT_MS,
+            request_timeout_ms=10000,
+        )
+    except (KafkaTimeoutError, KafkaConnectionError) as exc:
+        pytest.fail(f"Cannot connect to Kafka broker at {kafka_url}: {exc}")
+        return
+
+    from kafka.errors import UnknownTopicOrPartitionError
+
+    # Assign all topic partitions and seek to the current end so we only
+    # see messages produced during this test run.
+    partitions = [TopicPartition(t, 0) for t in _CTS_KAFKA_TOPICS]
+    consumer.assign(partitions)
+    for tp in partitions:
+        try:
+            consumer.seek_to_end(tp)
+        except (UnknownTopicOrPartitionError, KafkaTimeoutError):
+            # Topic may not exist yet (no messages published); seek to 0 so
+            # that the first message on the topic is visible.
+            consumer.seek(tp, 0)
+
+    yield consumer
+    consumer.close()
+
+
+@pytest.fixture(autouse=True)
+def _kafka_drain_check(kafka_consumer, request):
+    """After each test, assert that no Kafka messages were left unconsumed.
+
+    Any message on a CTS topic that was not explicitly consumed by the test is
+    a sign of a bug (e.g. the application sent a duplicate or unexpected
+    message, or the test forgot to consume a message it produced).  The fixture
+    fails the test in that case so problems are caught immediately.
+    """
+    yield
+    if kafka_consumer is None:
+        return
+    from kafka.errors import KafkaConnectionError
+
+    stale = []
+    try:
+        records = kafka_consumer.poll(timeout_ms=500, max_records=10)
+    except KafkaConnectionError:
+        records = {}
+    for recs in records.values():
+        for rec in recs:
+            stale.append((rec.topic, rec.offset, rec.value))
+    if stale:
+        details = "\n".join(
+            f"  topic={t!r} offset={o} value={v!r}" for t, o, v in stale
+        )
+        pytest.fail(
+            f"Unconsumed Kafka messages found after test {request.node.name!r}:\n"
+            + details
+        )
+
+
+def _consume_one(consumer, topic, timeout_ms=None):
+    """Consume and return the next message on *topic* from *consumer*.
+
+    The consumer is long-lived and acts as a cursor, so successive calls to
+    this function return successive messages in order without any offset
+    bookkeeping.
+
+    Raises ``AssertionError`` if no message arrives within *timeout_ms*
+    (default: ``_KAFKA_CONSUMER_TIMEOUT_MS``).
+    """
+    from kafka.errors import KafkaConnectionError
+
+    if timeout_ms is None:
+        timeout_ms = _KAFKA_CONSUMER_TIMEOUT_MS
+
+    deadline_ms = timeout_ms
+    while deadline_ms > 0:
+        poll_ms = min(deadline_ms, 500)
+        try:
+            records = consumer.poll(timeout_ms=poll_ms, max_records=1)
+        except KafkaConnectionError as exc:
+            raise AssertionError(
+                f"Kafka broker disconnected while consuming topic '{topic}': {exc}"
+            ) from exc
+        if records:
+            for tp_key, recs in records.items():
+                if tp_key.topic == topic and recs:
+                    return recs[0].value
+        deadline_ms -= poll_ms
+    raise AssertionError(
+        f"No message received on Kafka topic '{topic}'" f" within {timeout_ms} ms"
+    )
