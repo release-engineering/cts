@@ -9,3 +9,5 @@ tox
 # Let's update this package to avoid this problem.
 itsdangerous>=1.1.0
 freezegun
+# Required for Kafka integration tests (test_integration_api.py)
+kafka-python

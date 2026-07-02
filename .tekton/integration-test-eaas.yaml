@@ -457,6 +457,145 @@ spec:
     - name: kubeconfig-secret
       value: $(tasks.provision-environment.results.secretRef)
 
+  - name: deploy-kafka
+    runAfter:
+    - provision-environment
+    taskSpec:
+      params:
+      - name: kubeconfig-secret
+        type: string
+      steps:
+      - name: create-kafka
+        image: quay.io/konflux-ci/appstudio-utils:latest
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          KUBECONFIG=/tmp/kubeconfig
+          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+          export KUBECONFIG
+
+          echo "=========================================="
+          echo "Deploying Kafka (Apache KRaft single-node)"
+          echo "=========================================="
+
+          kubectl apply -f - <<'EOFYAML'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: kafka
+            labels:
+              app: kafka
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: kafka
+            template:
+              metadata:
+                labels:
+                  app: kafka
+              spec:
+                initContainers:
+                - name: copy-kafka-config
+                  image: docker.io/apache/kafka:3.9.2
+                  command: ["/bin/sh", "-c", "cp -r /opt/kafka/config/. /mnt/kafka-config/"]
+                  volumeMounts:
+                  - name: kafka-config
+                    mountPath: /mnt/kafka-config
+                containers:
+                - name: kafka
+                  image: docker.io/apache/kafka:3.9.2
+                  ports:
+                  - containerPort: 9092
+                    name: client
+                  - containerPort: 9093
+                    name: controller
+                  env:
+                  - name: KAFKA_NODE_ID
+                    value: "1"
+                  - name: KAFKA_PROCESS_ROLES
+                    value: "broker,controller"
+                  - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+                    value: "1@localhost:9093"
+                  - name: KAFKA_LISTENERS
+                    value: "PLAINTEXT://:9092,CONTROLLER://:9093"
+                  - name: KAFKA_ADVERTISED_LISTENERS
+                    value: "PLAINTEXT://kafka:9092"
+                  - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+                    value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+                  - name: KAFKA_CONTROLLER_LISTENER_NAMES
+                    value: "CONTROLLER"
+                  - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+                    value: "true"
+                  - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+                    value: "1"
+                  - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+                    value: "1"
+                  - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+                    value: "1"
+                  - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+                    value: "0"
+                  resources:
+                    requests:
+                      memory: "256Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "512Mi"
+                      cpu: "500m"
+                  readinessProbe:
+                    tcpSocket:
+                      port: 9092
+                    initialDelaySeconds: 20
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 24
+                  volumeMounts:
+                  - name: kafka-config
+                    mountPath: /opt/kafka/config
+                  - name: kafka-logs
+                    mountPath: /tmp/kafka-logs
+                  - name: kafka-gc-logs
+                    mountPath: /opt/kafka/logs
+                volumes:
+                - name: kafka-config
+                  emptyDir: {}
+                - name: kafka-logs
+                  emptyDir: {}
+                - name: kafka-gc-logs
+                  emptyDir: {}
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: kafka
+            labels:
+              app: kafka
+          spec:
+            ports:
+            - port: 9092
+              targetPort: 9092
+              name: client
+            - port: 9093
+              targetPort: 9093
+              name: controller
+            selector:
+              app: kafka
+          EOFYAML
+
+          echo "Waiting for Kafka to be ready..."
+          if ! kubectl wait --for=condition=available --timeout=300s deployment/kafka; then
+            echo "Kafka deployment failed! Debug info:"
+            kubectl describe deployment kafka
+            kubectl describe pod -l app=kafka
+            kubectl logs -l app=kafka --tail=50 || echo "No logs available"
+            exit 1
+          fi
+          echo "✓ Kafka is ready"
+    params:
+    - name: kubeconfig-secret
+      value: $(tasks.provision-environment.results.secretRef)
+
   - name: deploy-database
     runAfter:
     - provision-environment
@@ -597,6 +736,7 @@ spec:
     - deploy-database
     - deploy-openldap
     - deploy-dex
+    - deploy-kafka
     taskSpec:
       params:
       - name: kubeconfig-secret
@@ -643,6 +783,14 @@ spec:
                   ]
                   ADMINS = {"groups": [], "users": ["builder@example.com"]}
                   ALLOWED_BUILDERS = {"groups": [], "users": ["builder@example.com"]}
+                  MESSAGING_BACKEND = "kafka"
+                  MESSAGING_BROKER_URLS = ["kafka:9092"]
+                  MESSAGING_KAFKA_SECURITY_PROTOCOL = "PLAINTEXT"
+                  MESSAGING_KAFKA_SASL_MECHANISM = ""
+                  MESSAGING_KAFKA_USERNAME = ""
+                  MESSAGING_KAFKA_PASSWORD = ""
+                  MESSAGING_KAFKA_COMPRESSION_TYPE = "none"
+                  MESSAGING_TOPIC_PREFIX = "cts."
             httpd.conf: |
               ServerRoot "/etc/httpd"
               PidFile /tmp/httpd.pid
@@ -916,9 +1064,9 @@ spec:
             echo 'Installing Dex CA certificate...'
             echo '$DEX_CA_B64' | base64 -d > /tmp/dex-ca.crt
 
-            echo 'Installing pytest and requests...'
+            echo 'Installing pytest, requests, and kafka-python...'
             python3 -m ensurepip
-            python3 -m pip install --target /tmp/test-deps --quiet pytest requests
+            python3 -m pip install --target /tmp/test-deps --quiet pytest requests kafka-python
 
             echo ''
             echo 'Cloning repository...'
@@ -930,7 +1078,7 @@ spec:
 
             echo ''
             echo 'Running pytest...'
-            PYTHONPATH=/tmp/test-deps REQUESTS_CA_BUNDLE=/tmp/dex-ca.crt CTS_URL=http://cts:8080 AUTH_BACKEND=oidc_or_kerberos DEX_URL=https://dex:5556 python3 -m pytest tests/test_integration_api.py -v -s -o addopts=
+            PYTHONPATH=/tmp/test-deps REQUESTS_CA_BUNDLE=/tmp/dex-ca.crt CTS_URL=http://cts:8080 AUTH_BACKEND=oidc_or_kerberos DEX_URL=https://dex:5556 KAFKA_URL=kafka:9092 python3 -m pytest tests/test_integration_api.py -v -s -o addopts=
           "
           TEST_RESULT=$?
           set -e
