@@ -237,22 +237,8 @@ class CTSClient:
         self.kafka = kafka_consumer
 
     def _assert_kafka_message(self, topic, event_name, compose_id):
-        """Consume one Kafka message and assert it matches the expected event.
-
-        When ``self.kafka`` is ``None`` (no Kafka broker configured), this
-        method returns immediately without making any assertions.
-        """
-        if self.kafka is None:
-            return
-        msg = _consume_one(self.kafka, topic)
-        assert (
-            msg.get("event") == event_name
-        ), f"Expected event={event_name!r}, got event={msg.get('event')!r}"
-        assert msg.get("compose") is not None, f"Message missing 'compose' key: {msg}"
-        compose_info_data = msg["compose"].get("compose_info", {})
-        assert compose_id in str(
-            compose_info_data
-        ), f"Message compose_info does not reference compose {compose_id}: {msg}"
+        """Consume one Kafka message and assert it matches the expected event."""
+        _assert_compose_message(self.kafka, topic, event_name, compose_id)
 
     def create_tag(self, name, description, documentation):
         """Create a tag and return the response data."""
@@ -803,6 +789,25 @@ def _kafka_drain_check(kafka_consumer, request):
         )
 
 
+def _assert_compose_message(kafka_consumer, topic, event_name, compose_id):
+    """Consume one message and assert it matches the expected event and compose.
+
+    When *kafka_consumer* is ``None`` (no Kafka broker configured), this
+    function returns immediately without making any assertions.
+    """
+    if kafka_consumer is None:
+        return
+    msg = _consume_one(kafka_consumer, topic)
+    assert (
+        msg.get("event") == event_name
+    ), f"Expected event={event_name!r}, got event={msg.get('event')!r}"
+    assert msg.get("compose") is not None, f"Message missing 'compose' key: {msg}"
+    compose_info_data = msg["compose"].get("compose_info", {})
+    assert compose_id in str(
+        compose_info_data
+    ), f"Message compose_info does not reference compose {compose_id}: {msg}"
+
+
 def _consume_one(consumer, topic, timeout_ms=None):
     """Consume and return the next message on *topic* from *consumer*.
 
@@ -839,3 +844,79 @@ def _consume_one(consumer, topic, timeout_ms=None):
     raise AssertionError(
         f"No message received on Kafka topic '{topic}' within {timeout_ms} ms"
     )
+
+
+# Standalone Kafka integration tests
+# These tests are explicitly skipped when KAFKA_URL is not set.
+# They verify that CTS publishes the correct Kafka message for each
+# compose lifecycle event.
+
+
+def test_kafka_compose_created(cts_client):
+    """Verify that importing a compose publishes a compose-created Kafka message.
+
+    Skipped when KAFKA_URL is not set (no Kafka broker available).
+    """
+    if cts_client.kafka is None:
+        pytest.skip("requires KAFKA_URL")
+
+    data = cts_client.import_compose(
+        "KafkaCreatedTest",
+        "1.0",
+        "20260101",
+    )
+    compose_id = data["payload"]["compose"]["id"]
+    assert compose_id, "Compose ID must be non-empty"
+
+
+def test_kafka_compose_tagged(cts_client):
+    """Verify that tagging a compose publishes a compose-tagged Kafka message.
+
+    Skipped when KAFKA_URL is not set (no Kafka broker available).
+    """
+    if cts_client.kafka is None:
+        pytest.skip("requires KAFKA_URL")
+
+    # Create a tag, then import a compose and apply the tag.
+    tag_data = cts_client.create_tag(
+        "kafka-tagged-test",
+        "Tag for Kafka tagged test",
+        "https://example.com/docs/kafka-tagged",
+    )
+    tag_name = tag_data["name"]
+
+    compose_data = cts_client.import_compose(
+        "KafkaTaggedTest",
+        "1.0",
+        "20260102",
+    )
+    compose_id = compose_data["payload"]["compose"]["id"]
+
+    cts_client.tag_compose(compose_id, tag_name)
+
+
+def test_kafka_compose_untagged(cts_client):
+    """Verify that untagging a compose publishes a compose-untagged Kafka message.
+
+    Skipped when KAFKA_URL is not set (no Kafka broker available).
+    """
+    if cts_client.kafka is None:
+        pytest.skip("requires KAFKA_URL")
+
+    # Create a tag, import a compose, tag it, then untag it.
+    tag_data = cts_client.create_tag(
+        "kafka-untagged-test",
+        "Tag for Kafka untagged test",
+        "https://example.com/docs/kafka-untagged",
+    )
+    tag_name = tag_data["name"]
+
+    compose_data = cts_client.import_compose(
+        "KafkaUntaggedTest",
+        "1.0",
+        "20260103",
+    )
+    compose_id = compose_data["payload"]["compose"]["id"]
+
+    cts_client.tag_compose(compose_id, tag_name)
+    cts_client.untag_compose(compose_id, tag_name)
