@@ -1,8 +1,6 @@
-FROM registry.fedoraproject.org/fedora-minimal:44
+FROM registry.access.redhat.com/ubi9/python-312
 
-RUN microdnf install -y python3 python3-pip && \
-    microdnf clean all && \
-    pip3 install --no-cache-dir ldaptor twisted
+RUN pip install --no-cache-dir twisted ldaptor
 
 COPY server.py /app/server.py
 
