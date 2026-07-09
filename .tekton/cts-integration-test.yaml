@@ -1,4 +1,4 @@
-apiVersion: appstudio.redhat.com/v1beta1
+apiVersion: appstudio.redhat.com/v1beta2
 kind: IntegrationTestScenario
 metadata:
   name: cts-integration-test
@@ -9,6 +9,7 @@ spec:
   application: cts
   resolverRef:
     resolver: git
+    resourceKind: pipelinerun
     params:
     - name: url
       value: https://github.com/release-engineering/cts

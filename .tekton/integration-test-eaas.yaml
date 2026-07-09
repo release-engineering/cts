@@ -2,7 +2,18 @@ apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
   generateName: cts-integration-test-eaas-
+  labels:
+    appstudio.openshift.io/application: cts
 spec:
+  workspaces:
+  - name: source
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
   pipelineSpec:
     description: |
       Integration test for CTS using Konflux EaaS (Environment as a Service).
@@ -14,8 +25,12 @@ spec:
       description: JSON string representing the snapshot under test
       type: string
 
+    workspaces:
+    - name: source
+      description: Shared workspace for the cloned CTS repository
+
     tasks:
-    - name: parse-snapshot
+    - name: test-metadata
       taskSpec:
         params:
         - name: SNAPSHOT
@@ -30,16 +45,25 @@ spec:
         - name: git-url
           description: Git repository URL
         - name: git-revision
-          description: Git revision (commit SHA)
+          description: >-
+            Git revision (commit SHA) to clone: the PaC annotation SHA when
+            present (component-specific run), otherwise the Snapshot revision
+            (group test where all components share the same commit).
         steps:
         - name: extract-metadata
           image: quay.io/konflux-ci/appstudio-utils:latest
+          env:
+          - name: SNAPSHOT
+            value: $(params.SNAPSHOT)
+          - name: PAC_SHA
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/sha']
           script: |
             #!/usr/bin/env bash
             set -euo pipefail
 
             echo "Parsing snapshot..."
-            SNAPSHOT='$(params.SNAPSHOT)'
 
             # Extract image URL
             IMAGE_URL=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .containerImage')
@@ -71,8 +95,20 @@ spec:
             echo ""
             echo "Git URL: $GIT_URL"
 
-            # Extract git revision
-            GIT_REVISION=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .source.git.revision')
+            # Select the git revision to clone.
+            # PAC_SHA (from the Downward API) is the exact commit that triggered this
+            # PipelineRun when testing a single component (e.g. ldap-server). In that
+            # case the Snapshot's cts revision still points to the last main-branch
+            # commit, which may not yet have groups.ldif. For group tests the
+            # annotation is absent and the Snapshot revision is the right choice.
+            SNAPSHOT_REVISION=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .source.git.revision')
+            if [ -n "$PAC_SHA" ]; then
+              GIT_REVISION="$PAC_SHA"
+              echo "Using SHA from PaC annotation: $GIT_REVISION"
+            else
+              GIT_REVISION="$SNAPSHOT_REVISION"
+              echo "PaC annotation absent; using Snapshot git-revision: $GIT_REVISION"
+            fi
             echo -n "$GIT_REVISION" | tee $(results.git-revision.path)
             echo ""
             echo "Git revision: $GIT_REVISION"
@@ -80,11 +116,47 @@ spec:
       - name: SNAPSHOT
         value: $(params.SNAPSHOT)
 
+    - name: clone-repo
+      runAfter:
+      - test-metadata
+      when:
+      - input: $(tasks.test-metadata.results.ldap-server-present)
+        operator: in
+        values:
+        - "true"
+      workspaces:
+      - name: source
+        workspace: source
+      taskSpec:
+        workspaces:
+        - name: source
+        params:
+        - name: git-url
+          type: string
+        - name: git-revision
+          type: string
+        steps:
+        - name: clone
+          image: quay.io/konflux-ci/appstudio-utils:latest
+          script: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+
+            DEST="$(workspaces.source.path)/cts-repo"
+            git clone --depth 1 "$(params.git-url)" "$DEST"
+            git -C "$DEST" fetch --depth 1 origin "$(params.git-revision)"
+            git -C "$DEST" checkout FETCH_HEAD
+      params:
+      - name: git-url
+        value: $(tasks.test-metadata.results.git-url)
+      - name: git-revision
+        value: $(tasks.test-metadata.results.git-revision)
+
     - name: provision-environment
       runAfter:
-      - parse-snapshot
+      - test-metadata
       when:
-      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+      - input: $(tasks.test-metadata.results.ldap-server-present)
         operator: in
         values:
         - "true"
@@ -108,12 +180,18 @@ spec:
     - name: deploy-openldap
       runAfter:
       - provision-environment
+      - clone-repo
       when:
-      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+      - input: $(tasks.test-metadata.results.ldap-server-present)
         operator: in
         values:
         - "true"
+      workspaces:
+      - name: source
+        workspace: source
       taskSpec:
+        workspaces:
+        - name: source
         params:
         - name: kubeconfig-secret
           type: string
@@ -136,6 +214,10 @@ spec:
 
             LDAP_IMAGE="$(params.ldap-server-image)"
             echo "Using LDAP server image: $LDAP_IMAGE"
+
+            echo "Creating ldap-data ConfigMap from cloned repository..."
+            kubectl create configmap ldap-data \
+              --from-file=groups.ldif="$(workspaces.source.path)/cts-repo/integration-tests/data/groups.ldif"
 
             kubectl apply -f - <<EOFYAML
             apiVersion: apps/v1
@@ -174,6 +256,14 @@ spec:
                       limits:
                         memory: "256Mi"
                         cpu: "200m"
+                    volumeMounts:
+                    - name: ldap-data
+                      mountPath: /etc/ldap-data
+                      readOnly: true
+                  volumes:
+                  - name: ldap-data
+                    configMap:
+                      name: ldap-data
             ---
             apiVersion: v1
             kind: Service
@@ -203,13 +293,13 @@ spec:
       - name: kubeconfig-secret
         value: $(tasks.provision-environment.results.secretRef)
       - name: ldap-server-image
-        value: $(tasks.parse-snapshot.results.ldap-server-image-url)
+        value: $(tasks.test-metadata.results.ldap-server-image-url)
 
     - name: deploy-dex
       runAfter:
       - provision-environment
       when:
-      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+      - input: $(tasks.test-metadata.results.ldap-server-present)
         operator: in
         values:
         - "true"
@@ -547,7 +637,7 @@ spec:
       runAfter:
       - provision-environment
       when:
-      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+      - input: $(tasks.test-metadata.results.ldap-server-present)
         operator: in
         values:
         - "true"
@@ -690,7 +780,7 @@ spec:
       - deploy-dex
       - deploy-kafka
       when:
-      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+      - input: $(tasks.test-metadata.results.ldap-server-present)
         operator: in
         values:
         - "true"
@@ -951,23 +1041,24 @@ spec:
       - name: kubeconfig-secret
         value: $(tasks.provision-environment.results.secretRef)
       - name: image-url
-        value: $(tasks.parse-snapshot.results.image-url)
+        value: $(tasks.test-metadata.results.image-url)
 
     - name: run-tests
       runAfter:
       - deploy-cts
       when:
-      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+      - input: $(tasks.test-metadata.results.ldap-server-present)
         operator: in
         values:
         - "true"
+      workspaces:
+      - name: source
+        workspace: source
       taskSpec:
+        workspaces:
+        - name: source
         params:
         - name: kubeconfig-secret
-          type: string
-        - name: git-url
-          type: string
-        - name: git-revision
           type: string
         results:
         - name: test-result
@@ -1009,8 +1100,10 @@ spec:
             echo "Waiting for test runner pod to be ready..."
             kubectl wait --for=condition=Ready pod/cts-test-runner -n $NAMESPACE --timeout=60s
 
-            GIT_URL='$(params.git-url)'
-            GIT_REV='$(params.git-revision)'
+            echo ""
+            echo "Copying pre-cloned repository into test runner pod..."
+            kubectl cp "$(workspaces.source.path)/cts-repo" \
+              $NAMESPACE/cts-test-runner:/tmp/cts-repo
 
             echo ""
             echo "Running tests in pod..."
@@ -1031,15 +1124,8 @@ spec:
               python3 -m pip install --target /tmp/test-deps --quiet pytest requests kafka-python
 
               echo ''
-              echo 'Cloning repository...'
-              cd /tmp
-              git clone --depth 1 '$GIT_URL' cts-repo
-              cd cts-repo
-              git fetch --depth 1 origin '$GIT_REV'
-              git checkout '$GIT_REV'
-
-              echo ''
               echo 'Running pytest...'
+              cd /tmp/cts-repo
               PYTHONPATH=/tmp/test-deps REQUESTS_CA_BUNDLE=/tmp/dex-ca.crt CTS_URL=http://cts:8080 AUTH_BACKEND=oidc_or_kerberos DEX_URL=https://dex:5556 KAFKA_URL=kafka:9092 python3 -m pytest tests/test_integration_api.py -v -s -o addopts=
             "
             TEST_RESULT=$?
@@ -1074,16 +1160,12 @@ spec:
       params:
       - name: kubeconfig-secret
         value: $(tasks.provision-environment.results.secretRef)
-      - name: git-url
-        value: $(tasks.parse-snapshot.results.git-url)
-      - name: git-revision
-        value: $(tasks.parse-snapshot.results.git-revision)
 
     finally:
     - name: report-result
       params:
       - name: ldap-server-present
-        value: $(tasks.parse-snapshot.results.ldap-server-present)
+        value: $(tasks.test-metadata.results.ldap-server-present)
       - name: test-result
         value: $(tasks.run-tests.results.test-result)
       taskSpec:
@@ -1111,4 +1193,3 @@ spec:
     results:
     - name: TEST_OUTPUT
       value: $(finally.report-result.results.test-output)
-
