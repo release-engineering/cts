@@ -1,1112 +1,1114 @@
 apiVersion: tekton.dev/v1
-kind: Pipeline
+kind: PipelineRun
 metadata:
-  name: cts-integration-test-eaas
+  generateName: cts-integration-test-eaas-
 spec:
-  description: |
-    Integration test for CTS using Konflux EaaS (Environment as a Service).
-    Clones the repository, provisions an ephemeral namespace, and deploys
-    CTS with PostgreSQL for testing.
+  pipelineSpec:
+    description: |
+      Integration test for CTS using Konflux EaaS (Environment as a Service).
+      Clones the repository, provisions an ephemeral namespace, and deploys
+      CTS with PostgreSQL for testing.
 
-  params:
-  - name: SNAPSHOT
-    description: JSON string representing the snapshot under test
-    type: string
-
-  tasks:
-  - name: parse-snapshot
-    taskSpec:
-      params:
-      - name: SNAPSHOT
-        type: string
-      results:
-      - name: image-url
-        description: Container image URL to test
-      - name: ldap-server-image-url
-        description: Container image URL for the pre-built LDAP server
-      - name: ldap-server-present
-        description: Whether the ldap-server component is present in the Snapshot
-      - name: git-url
-        description: Git repository URL
-      - name: git-revision
-        description: Git revision (commit SHA)
-      steps:
-      - name: extract-metadata
-        image: quay.io/konflux-ci/appstudio-utils:latest
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          echo "Parsing snapshot..."
-          SNAPSHOT='$(params.SNAPSHOT)'
-
-          # Extract image URL
-          IMAGE_URL=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .containerImage')
-          echo -n "$IMAGE_URL" | tee $(results.image-url.path)
-          echo ""
-          echo "Image to test: $IMAGE_URL"
-
-          # Extract ldap-server image URL. If the ldap-server component is absent
-          # from the Snapshot (e.g. no ldap-server build was triggered for this PR
-          # because no relevant files changed, and no stable build exists yet), set
-          # ldap-server-present to "false" so the test pipeline is skipped rather
-          # than trying to pull a non-existent image.
-          LDAP_SERVER_IMAGE_URL=$(echo "$SNAPSHOT" | jq -r '(.components[] | select(.name=="ldap-server") | .containerImage) // empty')
-          if [ -z "$LDAP_SERVER_IMAGE_URL" ]; then
-            echo "ldap-server not found in Snapshot; skipping integration test"
-            echo -n "" | tee $(results.ldap-server-image-url.path)
-            echo -n "false" | tee $(results.ldap-server-present.path)
-          else
-            echo -n "$LDAP_SERVER_IMAGE_URL" | tee $(results.ldap-server-image-url.path)
-            echo -n "true" | tee $(results.ldap-server-present.path)
-          fi
-          echo ""
-          echo "LDAP server image: $LDAP_SERVER_IMAGE_URL"
-          echo ""
-
-          # Extract git repository URL
-          GIT_URL=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .source.git.url')
-          echo -n "$GIT_URL" | tee $(results.git-url.path)
-          echo ""
-          echo "Git URL: $GIT_URL"
-
-          # Extract git revision
-          GIT_REVISION=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .source.git.revision')
-          echo -n "$GIT_REVISION" | tee $(results.git-revision.path)
-          echo ""
-          echo "Git revision: $GIT_REVISION"
     params:
     - name: SNAPSHOT
-      value: $(params.SNAPSHOT)
+      description: JSON string representing the snapshot under test
+      type: string
 
-  - name: provision-environment
-    runAfter:
-    - parse-snapshot
-    when:
-    - input: $(tasks.parse-snapshot.results.ldap-server-present)
-      operator: in
-      values:
-      - "true"
-    taskRef:
+    tasks:
+    - name: parse-snapshot
+      taskSpec:
+        params:
+        - name: SNAPSHOT
+          type: string
+        results:
+        - name: image-url
+          description: Container image URL to test
+        - name: ldap-server-image-url
+          description: Container image URL for the pre-built LDAP server
+        - name: ldap-server-present
+          description: Whether the ldap-server component is present in the Snapshot
+        - name: git-url
+          description: Git repository URL
+        - name: git-revision
+          description: Git revision (commit SHA)
+        steps:
+        - name: extract-metadata
+          image: quay.io/konflux-ci/appstudio-utils:latest
+          script: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+
+            echo "Parsing snapshot..."
+            SNAPSHOT='$(params.SNAPSHOT)'
+
+            # Extract image URL
+            IMAGE_URL=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .containerImage')
+            echo -n "$IMAGE_URL" | tee $(results.image-url.path)
+            echo ""
+            echo "Image to test: $IMAGE_URL"
+
+            # Extract ldap-server image URL. If the ldap-server component is absent
+            # from the Snapshot (e.g. no ldap-server build was triggered for this PR
+            # because no relevant files changed, and no stable build exists yet), set
+            # ldap-server-present to "false" so the test pipeline is skipped rather
+            # than trying to pull a non-existent image.
+            LDAP_SERVER_IMAGE_URL=$(echo "$SNAPSHOT" | jq -r '(.components[] | select(.name=="ldap-server") | .containerImage) // empty')
+            if [ -z "$LDAP_SERVER_IMAGE_URL" ]; then
+              echo "ldap-server not found in Snapshot; skipping integration test"
+              echo -n "" | tee $(results.ldap-server-image-url.path)
+              echo -n "false" | tee $(results.ldap-server-present.path)
+            else
+              echo -n "$LDAP_SERVER_IMAGE_URL" | tee $(results.ldap-server-image-url.path)
+              echo -n "true" | tee $(results.ldap-server-present.path)
+            fi
+            echo ""
+            echo "LDAP server image: $LDAP_SERVER_IMAGE_URL"
+            echo ""
+
+            # Extract git repository URL
+            GIT_URL=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .source.git.url')
+            echo -n "$GIT_URL" | tee $(results.git-url.path)
+            echo ""
+            echo "Git URL: $GIT_URL"
+
+            # Extract git revision
+            GIT_REVISION=$(echo "$SNAPSHOT" | jq -r '.components[] | select(.name=="cts") | .source.git.revision')
+            echo -n "$GIT_REVISION" | tee $(results.git-revision.path)
+            echo ""
+            echo "Git revision: $GIT_REVISION"
       params:
-      - name: name
-        value: eaas-provision-space
-      - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-eaas-provision-space:0.1
-      - name: kind
-        value: task
-      resolver: bundles
-    params:
-    - name: ownerKind
-      value: PipelineRun
-    - name: ownerName
-      value: $(context.pipelineRun.name)
-    - name: ownerUid
-      value: $(context.pipelineRun.uid)
+      - name: SNAPSHOT
+        value: $(params.SNAPSHOT)
 
-  - name: deploy-openldap
-    runAfter:
-    - provision-environment
-    when:
-    - input: $(tasks.parse-snapshot.results.ldap-server-present)
-      operator: in
-      values:
-      - "true"
-    taskSpec:
+    - name: provision-environment
+      runAfter:
+      - parse-snapshot
+      when:
+      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+        operator: in
+        values:
+        - "true"
+      taskRef:
+        params:
+        - name: name
+          value: eaas-provision-space
+        - name: bundle
+          value: quay.io/konflux-ci/tekton-catalog/task-eaas-provision-space:0.1
+        - name: kind
+          value: task
+        resolver: bundles
       params:
-      - name: kubeconfig-secret
-        type: string
-      - name: ldap-server-image
-        type: string
-      steps:
-      - name: create-openldap
-        image: quay.io/konflux-ci/appstudio-utils:latest
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
+      - name: ownerKind
+        value: PipelineRun
+      - name: ownerName
+        value: $(context.pipelineRun.name)
+      - name: ownerUid
+        value: $(context.pipelineRun.uid)
 
-          KUBECONFIG=/tmp/kubeconfig
-          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-          export KUBECONFIG
+    - name: deploy-openldap
+      runAfter:
+      - provision-environment
+      when:
+      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+        operator: in
+        values:
+        - "true"
+      taskSpec:
+        params:
+        - name: kubeconfig-secret
+          type: string
+        - name: ldap-server-image
+          type: string
+        steps:
+        - name: create-openldap
+          image: quay.io/konflux-ci/appstudio-utils:latest
+          script: |
+            #!/usr/bin/env bash
+            set -euo pipefail
 
-          echo "=========================================="
-          echo "Deploying LDAP Server (pre-built image)"
-          echo "=========================================="
+            KUBECONFIG=/tmp/kubeconfig
+            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+            export KUBECONFIG
 
-          LDAP_IMAGE="$(params.ldap-server-image)"
-          echo "Using LDAP server image: $LDAP_IMAGE"
+            echo "=========================================="
+            echo "Deploying LDAP Server (pre-built image)"
+            echo "=========================================="
 
-          kubectl apply -f - <<EOFYAML
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: openldap
-            labels:
-              app: openldap
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
+            LDAP_IMAGE="$(params.ldap-server-image)"
+            echo "Using LDAP server image: $LDAP_IMAGE"
+
+            kubectl apply -f - <<EOFYAML
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: openldap
+              labels:
                 app: openldap
-            template:
-              metadata:
-                labels:
+            spec:
+              replicas: 1
+              selector:
+                matchLabels:
                   app: openldap
-              spec:
-                containers:
-                - name: openldap
-                  image: $LDAP_IMAGE
-                  ports:
-                  - containerPort: 1389
-                    name: ldap
-                  readinessProbe:
-                    tcpSocket:
-                      port: 1389
-                    initialDelaySeconds: 15
-                    periodSeconds: 5
-                    timeoutSeconds: 3
-                    failureThreshold: 12
-                  resources:
-                    requests:
-                      memory: "128Mi"
-                      cpu: "50m"
-                    limits:
-                      memory: "256Mi"
-                      cpu: "200m"
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: openldap
-            labels:
-              app: openldap
-          spec:
-            ports:
-            - port: 1389
-              targetPort: 1389
-              name: ldap
-            selector:
-              app: openldap
-          EOFYAML
+              template:
+                metadata:
+                  labels:
+                    app: openldap
+                spec:
+                  containers:
+                  - name: openldap
+                    image: $LDAP_IMAGE
+                    ports:
+                    - containerPort: 1389
+                      name: ldap
+                    readinessProbe:
+                      tcpSocket:
+                        port: 1389
+                      initialDelaySeconds: 15
+                      periodSeconds: 5
+                      timeoutSeconds: 3
+                      failureThreshold: 12
+                    resources:
+                      requests:
+                        memory: "128Mi"
+                        cpu: "50m"
+                      limits:
+                        memory: "256Mi"
+                        cpu: "200m"
+            ---
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: openldap
+              labels:
+                app: openldap
+            spec:
+              ports:
+              - port: 1389
+                targetPort: 1389
+                name: ldap
+              selector:
+                app: openldap
+            EOFYAML
 
-          echo "Waiting for LDAP server to be ready..."
-          if ! kubectl wait --for=condition=available --timeout=180s deployment/openldap; then
-            echo "LDAP deployment failed! Debug info:"
-            kubectl describe deployment openldap
-            kubectl describe pod -l app=openldap
-            kubectl logs -l app=openldap --tail=50 || echo "No logs available"
-            exit 1
-          fi
-          echo "✓ LDAP server is ready"
-    params:
-    - name: kubeconfig-secret
-      value: $(tasks.provision-environment.results.secretRef)
-    - name: ldap-server-image
-      value: $(tasks.parse-snapshot.results.ldap-server-image-url)
-
-  - name: deploy-dex
-    runAfter:
-    - provision-environment
-    when:
-    - input: $(tasks.parse-snapshot.results.ldap-server-present)
-      operator: in
-      values:
-      - "true"
-    taskSpec:
+            echo "Waiting for LDAP server to be ready..."
+            if ! kubectl wait --for=condition=available --timeout=180s deployment/openldap; then
+              echo "LDAP deployment failed! Debug info:"
+              kubectl describe deployment openldap
+              kubectl describe pod -l app=openldap
+              kubectl logs -l app=openldap --tail=50 || echo "No logs available"
+              exit 1
+            fi
+            echo "✓ LDAP server is ready"
       params:
       - name: kubeconfig-secret
-        type: string
-      steps:
-      - name: create-dex
-        image: quay.io/konflux-ci/appstudio-utils:latest
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
+        value: $(tasks.provision-environment.results.secretRef)
+      - name: ldap-server-image
+        value: $(tasks.parse-snapshot.results.ldap-server-image-url)
 
-          KUBECONFIG=/tmp/kubeconfig
-          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-          export KUBECONFIG
+    - name: deploy-dex
+      runAfter:
+      - provision-environment
+      when:
+      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+        operator: in
+        values:
+        - "true"
+      taskSpec:
+        params:
+        - name: kubeconfig-secret
+          type: string
+        steps:
+        - name: create-dex
+          image: quay.io/konflux-ci/appstudio-utils:latest
+          script: |
+            #!/usr/bin/env bash
+            set -euo pipefail
 
-          echo "=========================================="
-          echo "Generating Dex TLS certificate"
-          echo "=========================================="
+            KUBECONFIG=/tmp/kubeconfig
+            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+            export KUBECONFIG
 
-          # Generate a self-signed CA and Dex server certificate (SAN: DNS:dex)
-          # so that OIDCOAuthVerifyJwksUri can use https://dex:5556/keys
-          TMPDIR=$(mktemp -d)
+            echo "=========================================="
+            echo "Generating Dex TLS certificate"
+            echo "=========================================="
 
-          # Generate CA key and cert
-          openssl genrsa -out "$TMPDIR/ca.key" 4096 2>/dev/null
-          openssl req -x509 -new -nodes -key "$TMPDIR/ca.key" \
-            -sha256 -days 365 \
-            -subj "/CN=dex-test-ca" \
-            -out "$TMPDIR/ca.crt" 2>/dev/null
+            # Generate a self-signed CA and Dex server certificate (SAN: DNS:dex)
+            # so that OIDCOAuthVerifyJwksUri can use https://dex:5556/keys
+            TMPDIR=$(mktemp -d)
 
-          # Generate Dex server key and CSR
-          openssl genrsa -out "$TMPDIR/dex.key" 4096 2>/dev/null
-          openssl req -new -key "$TMPDIR/dex.key" \
-            -subj "/CN=dex" \
-            -out "$TMPDIR/dex.csr" 2>/dev/null
+            # Generate CA key and cert
+            openssl genrsa -out "$TMPDIR/ca.key" 4096 2>/dev/null
+            openssl req -x509 -new -nodes -key "$TMPDIR/ca.key" \
+              -sha256 -days 365 \
+              -subj "/CN=dex-test-ca" \
+              -out "$TMPDIR/ca.crt" 2>/dev/null
 
-          # Sign the Dex cert with the CA, adding SAN for DNS:dex
-          cat > "$TMPDIR/dex.ext" <<'EXTEOF'
-          [SAN]
-          subjectAltName=DNS:dex
-          EXTEOF
-          openssl x509 -req -in "$TMPDIR/dex.csr" \
-            -CA "$TMPDIR/ca.crt" -CAkey "$TMPDIR/ca.key" -CAcreateserial \
-            -out "$TMPDIR/dex.crt" -days 365 -sha256 \
-            -extfile "$TMPDIR/dex.ext" -extensions SAN 2>/dev/null
+            # Generate Dex server key and CSR
+            openssl genrsa -out "$TMPDIR/dex.key" 4096 2>/dev/null
+            openssl req -new -key "$TMPDIR/dex.key" \
+              -subj "/CN=dex" \
+              -out "$TMPDIR/dex.csr" 2>/dev/null
 
-          # Store CA cert and Dex TLS cert/key in Kubernetes Secrets
-          kubectl create secret generic dex-tls \
-            --from-file=tls.crt="$TMPDIR/dex.crt" \
-            --from-file=tls.key="$TMPDIR/dex.key"
+            # Sign the Dex cert with the CA, adding SAN for DNS:dex
+            cat > "$TMPDIR/dex.ext" <<'EXTEOF'
+            [SAN]
+            subjectAltName=DNS:dex
+            EXTEOF
+            openssl x509 -req -in "$TMPDIR/dex.csr" \
+              -CA "$TMPDIR/ca.crt" -CAkey "$TMPDIR/ca.key" -CAcreateserial \
+              -out "$TMPDIR/dex.crt" -days 365 -sha256 \
+              -extfile "$TMPDIR/dex.ext" -extensions SAN 2>/dev/null
 
-          kubectl create secret generic dex-ca \
-            --from-file=ca.crt="$TMPDIR/ca.crt"
+            # Store CA cert and Dex TLS cert/key in Kubernetes Secrets
+            kubectl create secret generic dex-tls \
+              --from-file=tls.crt="$TMPDIR/dex.crt" \
+              --from-file=tls.key="$TMPDIR/dex.key"
 
-          rm -rf "$TMPDIR"
-          echo "✓ Dex TLS certificate generated"
+            kubectl create secret generic dex-ca \
+              --from-file=ca.crt="$TMPDIR/ca.crt"
 
-          echo "=========================================="
-          echo "Deploying Dex OIDC Provider"
-          echo "=========================================="
+            rm -rf "$TMPDIR"
+            echo "✓ Dex TLS certificate generated"
 
-          kubectl apply -f - <<'EOFYAML'
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: dex-config
-          data:
-            config.yaml: |
-              issuer: https://dex:5556
+            echo "=========================================="
+            echo "Deploying Dex OIDC Provider"
+            echo "=========================================="
 
-              storage:
-                type: memory
+            kubectl apply -f - <<'EOFYAML'
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: dex-config
+            data:
+              config.yaml: |
+                issuer: https://dex:5556
 
-              web:
-                https: 0.0.0.0:5556
-                tlsCert: /etc/dex/tls/tls.crt
-                tlsKey: /etc/dex/tls/tls.key
+                storage:
+                  type: memory
 
-              logger:
-                level: debug
+                web:
+                  https: 0.0.0.0:5556
+                  tlsCert: /etc/dex/tls/tls.crt
+                  tlsKey: /etc/dex/tls/tls.key
 
-              enablePasswordDB: true
+                logger:
+                  level: debug
 
-              staticPasswords:
-              - email: builder@example.com
-                hash: "$2y$10$6cZyh42YBb2Q5.fE9nj3mu3UHs21NUmVP2fpU63EM3/ecJuHVscEC"
-                username: builder
-                userID: "builder"
-              - email: readonly@example.com
-                hash: "$2y$10$6cZyh42YBb2Q5.fE9nj3mu3UHs21NUmVP2fpU63EM3/ecJuHVscEC"
-                username: readonly
-                userID: "readonly"
+                enablePasswordDB: true
 
-              staticClients:
-              - id: cts-integration
-                secret: cts-integration-secret
-                name: CTS Integration
-                redirectURIs:
-                - http://cts:8080/redirect_uri
-                grantTypes:
-                - password
-                - authorization_code
+                staticPasswords:
+                - email: builder@example.com
+                  hash: "$2y$10$6cZyh42YBb2Q5.fE9nj3mu3UHs21NUmVP2fpU63EM3/ecJuHVscEC"
+                  username: builder
+                  userID: "builder"
+                - email: readonly@example.com
+                  hash: "$2y$10$6cZyh42YBb2Q5.fE9nj3mu3UHs21NUmVP2fpU63EM3/ecJuHVscEC"
+                  username: readonly
+                  userID: "readonly"
 
-              oauth2:
-                skipApprovalScreen: true
-                passwordConnector: local
-          EOFYAML
+                staticClients:
+                - id: cts-integration
+                  secret: cts-integration-secret
+                  name: CTS Integration
+                  redirectURIs:
+                  - http://cts:8080/redirect_uri
+                  grantTypes:
+                  - password
+                  - authorization_code
 
-          kubectl apply -f - <<'EOFYAML'
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: dex
-            labels:
-              app: dex
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
+                oauth2:
+                  skipApprovalScreen: true
+                  passwordConnector: local
+            EOFYAML
+
+            kubectl apply -f - <<'EOFYAML'
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: dex
+              labels:
                 app: dex
-            template:
-              metadata:
-                labels:
+            spec:
+              replicas: 1
+              selector:
+                matchLabels:
                   app: dex
-              spec:
-                containers:
-                - name: dex
-                  image: ghcr.io/dexidp/dex:v2.41.1
-                  args: ["dex", "serve", "/etc/dex/config.yaml"]
-                  ports:
-                  - containerPort: 5556
-                    name: https
-                  resources:
-                    requests:
-                      memory: "64Mi"
-                      cpu: "50m"
-                    limits:
-                      memory: "256Mi"
-                      cpu: "500m"
-                  readinessProbe:
-                    httpGet:
-                      path: /.well-known/openid-configuration
-                      port: 5556
-                      scheme: HTTPS
-                    initialDelaySeconds: 5
-                    periodSeconds: 5
-                    timeoutSeconds: 5
-                    failureThreshold: 12
-                  volumeMounts:
+              template:
+                metadata:
+                  labels:
+                    app: dex
+                spec:
+                  containers:
+                  - name: dex
+                    image: ghcr.io/dexidp/dex:v2.41.1
+                    args: ["dex", "serve", "/etc/dex/config.yaml"]
+                    ports:
+                    - containerPort: 5556
+                      name: https
+                    resources:
+                      requests:
+                        memory: "64Mi"
+                        cpu: "50m"
+                      limits:
+                        memory: "256Mi"
+                        cpu: "500m"
+                    readinessProbe:
+                      httpGet:
+                        path: /.well-known/openid-configuration
+                        port: 5556
+                        scheme: HTTPS
+                      initialDelaySeconds: 5
+                      periodSeconds: 5
+                      timeoutSeconds: 5
+                      failureThreshold: 12
+                    volumeMounts:
+                    - name: dex-config
+                      mountPath: /etc/dex
+                      readOnly: true
+                    - name: dex-tls
+                      mountPath: /etc/dex/tls
+                      readOnly: true
+                  volumes:
                   - name: dex-config
-                    mountPath: /etc/dex
-                    readOnly: true
+                    configMap:
+                      name: dex-config
                   - name: dex-tls
-                    mountPath: /etc/dex/tls
-                    readOnly: true
-                volumes:
-                - name: dex-config
-                  configMap:
-                    name: dex-config
-                - name: dex-tls
-                  secret:
-                    secretName: dex-tls
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: dex
-            labels:
-              app: dex
-          spec:
-            ports:
-            - port: 5556
-              targetPort: 5556
-              name: https
-            selector:
-              app: dex
-          EOFYAML
+                    secret:
+                      secretName: dex-tls
+            ---
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: dex
+              labels:
+                app: dex
+            spec:
+              ports:
+              - port: 5556
+                targetPort: 5556
+                name: https
+              selector:
+                app: dex
+            EOFYAML
 
-          echo "Waiting for Dex to be ready..."
-          if ! kubectl wait --for=condition=available --timeout=180s deployment/dex; then
-            echo "Dex deployment failed! Debug info:"
-            kubectl describe deployment dex
-            kubectl describe pod -l app=dex
-            kubectl logs -l app=dex --tail=50 || echo "No logs available"
-            exit 1
-          fi
-          echo "✓ Dex is ready"
-    params:
-    - name: kubeconfig-secret
-      value: $(tasks.provision-environment.results.secretRef)
-
-  - name: deploy-kafka
-    runAfter:
-    - provision-environment
-    taskSpec:
+            echo "Waiting for Dex to be ready..."
+            if ! kubectl wait --for=condition=available --timeout=180s deployment/dex; then
+              echo "Dex deployment failed! Debug info:"
+              kubectl describe deployment dex
+              kubectl describe pod -l app=dex
+              kubectl logs -l app=dex --tail=50 || echo "No logs available"
+              exit 1
+            fi
+            echo "✓ Dex is ready"
       params:
       - name: kubeconfig-secret
-        type: string
-      steps:
-      - name: create-kafka
-        image: quay.io/konflux-ci/appstudio-utils:latest
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
+        value: $(tasks.provision-environment.results.secretRef)
 
-          KUBECONFIG=/tmp/kubeconfig
-          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-          export KUBECONFIG
+    - name: deploy-kafka
+      runAfter:
+      - provision-environment
+      taskSpec:
+        params:
+        - name: kubeconfig-secret
+          type: string
+        steps:
+        - name: create-kafka
+          image: quay.io/konflux-ci/appstudio-utils:latest
+          script: |
+            #!/usr/bin/env bash
+            set -euo pipefail
 
-          echo "=========================================="
-          echo "Deploying Kafka (Apache KRaft single-node)"
-          echo "=========================================="
+            KUBECONFIG=/tmp/kubeconfig
+            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+            export KUBECONFIG
 
-          kubectl apply -f - <<'EOFYAML'
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: kafka
-            labels:
-              app: kafka
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
+            echo "=========================================="
+            echo "Deploying Kafka (Apache KRaft single-node)"
+            echo "=========================================="
+
+            kubectl apply -f - <<'EOFYAML'
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: kafka
+              labels:
                 app: kafka
-            template:
-              metadata:
-                labels:
+            spec:
+              replicas: 1
+              selector:
+                matchLabels:
                   app: kafka
-              spec:
-                initContainers:
-                - name: copy-kafka-config
-                  image: docker.io/apache/kafka:3.9.2
-                  command: ["/bin/sh", "-c", "cp -r /opt/kafka/config/. /mnt/kafka-config/"]
-                  volumeMounts:
+              template:
+                metadata:
+                  labels:
+                    app: kafka
+                spec:
+                  initContainers:
+                  - name: copy-kafka-config
+                    image: docker.io/apache/kafka:3.9.2
+                    command: ["/bin/sh", "-c", "cp -r /opt/kafka/config/. /mnt/kafka-config/"]
+                    volumeMounts:
+                    - name: kafka-config
+                      mountPath: /mnt/kafka-config
+                  containers:
+                  - name: kafka
+                    image: docker.io/apache/kafka:3.9.2
+                    ports:
+                    - containerPort: 9092
+                      name: client
+                    - containerPort: 9093
+                      name: controller
+                    env:
+                    - name: KAFKA_NODE_ID
+                      value: "1"
+                    - name: KAFKA_PROCESS_ROLES
+                      value: "broker,controller"
+                    - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+                      value: "1@localhost:9093"
+                    - name: KAFKA_LISTENERS
+                      value: "PLAINTEXT://:9092,CONTROLLER://:9093"
+                    - name: KAFKA_ADVERTISED_LISTENERS
+                      value: "PLAINTEXT://kafka:9092"
+                    - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+                      value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+                    - name: KAFKA_CONTROLLER_LISTENER_NAMES
+                      value: "CONTROLLER"
+                    - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+                      value: "true"
+                    - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+                      value: "1"
+                    - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+                      value: "1"
+                    - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+                      value: "1"
+                    - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+                      value: "0"
+                    resources:
+                      requests:
+                        memory: "256Mi"
+                        cpu: "100m"
+                      limits:
+                        memory: "512Mi"
+                        cpu: "500m"
+                    readinessProbe:
+                      tcpSocket:
+                        port: 9092
+                      initialDelaySeconds: 20
+                      periodSeconds: 5
+                      timeoutSeconds: 3
+                      failureThreshold: 24
+                    volumeMounts:
+                    - name: kafka-config
+                      mountPath: /opt/kafka/config
+                    - name: kafka-logs
+                      mountPath: /tmp/kafka-logs
+                    - name: kafka-gc-logs
+                      mountPath: /opt/kafka/logs
+                  volumes:
                   - name: kafka-config
-                    mountPath: /mnt/kafka-config
-                containers:
-                - name: kafka
-                  image: docker.io/apache/kafka:3.9.2
-                  ports:
-                  - containerPort: 9092
-                    name: client
-                  - containerPort: 9093
-                    name: controller
-                  env:
-                  - name: KAFKA_NODE_ID
-                    value: "1"
-                  - name: KAFKA_PROCESS_ROLES
-                    value: "broker,controller"
-                  - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-                    value: "1@localhost:9093"
-                  - name: KAFKA_LISTENERS
-                    value: "PLAINTEXT://:9092,CONTROLLER://:9093"
-                  - name: KAFKA_ADVERTISED_LISTENERS
-                    value: "PLAINTEXT://kafka:9092"
-                  - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-                    value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-                  - name: KAFKA_CONTROLLER_LISTENER_NAMES
-                    value: "CONTROLLER"
-                  - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
-                    value: "true"
-                  - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
-                    value: "1"
-                  - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
-                    value: "1"
-                  - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
-                    value: "1"
-                  - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
-                    value: "0"
-                  resources:
-                    requests:
-                      memory: "256Mi"
-                      cpu: "100m"
-                    limits:
-                      memory: "512Mi"
-                      cpu: "500m"
-                  readinessProbe:
-                    tcpSocket:
-                      port: 9092
-                    initialDelaySeconds: 20
-                    periodSeconds: 5
-                    timeoutSeconds: 3
-                    failureThreshold: 24
-                  volumeMounts:
-                  - name: kafka-config
-                    mountPath: /opt/kafka/config
+                    emptyDir: {}
                   - name: kafka-logs
-                    mountPath: /tmp/kafka-logs
+                    emptyDir: {}
                   - name: kafka-gc-logs
-                    mountPath: /opt/kafka/logs
-                volumes:
-                - name: kafka-config
-                  emptyDir: {}
-                - name: kafka-logs
-                  emptyDir: {}
-                - name: kafka-gc-logs
-                  emptyDir: {}
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: kafka
-            labels:
-              app: kafka
-          spec:
-            ports:
-            - port: 9092
-              targetPort: 9092
-              name: client
-            - port: 9093
-              targetPort: 9093
-              name: controller
-            selector:
-              app: kafka
-          EOFYAML
+                    emptyDir: {}
+            ---
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: kafka
+              labels:
+                app: kafka
+            spec:
+              ports:
+              - port: 9092
+                targetPort: 9092
+                name: client
+              - port: 9093
+                targetPort: 9093
+                name: controller
+              selector:
+                app: kafka
+            EOFYAML
 
-          echo "Waiting for Kafka to be ready..."
-          if ! kubectl wait --for=condition=available --timeout=300s deployment/kafka; then
-            echo "Kafka deployment failed! Debug info:"
-            kubectl describe deployment kafka
-            kubectl describe pod -l app=kafka
-            kubectl logs -l app=kafka --tail=50 || echo "No logs available"
-            exit 1
-          fi
-          echo "✓ Kafka is ready"
-    params:
-    - name: kubeconfig-secret
-      value: $(tasks.provision-environment.results.secretRef)
-
-  - name: deploy-database
-    runAfter:
-    - provision-environment
-    when:
-    - input: $(tasks.parse-snapshot.results.ldap-server-present)
-      operator: in
-      values:
-      - "true"
-    taskSpec:
+            echo "Waiting for Kafka to be ready..."
+            if ! kubectl wait --for=condition=available --timeout=300s deployment/kafka; then
+              echo "Kafka deployment failed! Debug info:"
+              kubectl describe deployment kafka
+              kubectl describe pod -l app=kafka
+              kubectl logs -l app=kafka --tail=50 || echo "No logs available"
+              exit 1
+            fi
+            echo "✓ Kafka is ready"
       params:
       - name: kubeconfig-secret
-        type: string
-      steps:
-      - name: create-database
-        image: quay.io/konflux-ci/appstudio-utils:latest
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
+        value: $(tasks.provision-environment.results.secretRef)
 
-          # Get kubeconfig from secret
-          KUBECONFIG=/tmp/kubeconfig
-          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-          export KUBECONFIG
+    - name: deploy-database
+      runAfter:
+      - provision-environment
+      when:
+      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+        operator: in
+        values:
+        - "true"
+      taskSpec:
+        params:
+        - name: kubeconfig-secret
+          type: string
+        steps:
+        - name: create-database
+          image: quay.io/konflux-ci/appstudio-utils:latest
+          script: |
+            #!/usr/bin/env bash
+            set -euo pipefail
 
-          echo "=========================================="
-          echo "Deploying PostgreSQL Database"
-          echo "=========================================="
+            # Get kubeconfig from secret
+            KUBECONFIG=/tmp/kubeconfig
+            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+            export KUBECONFIG
 
-          # Deploy PostgreSQL
-          kubectl apply -f - <<EOF
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: cts-db
-            labels:
-              app: cts-db
-          spec:
-            ports:
-            - port: 5432
-              targetPort: 5432
-            selector:
-              app: cts-db
-          ---
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: cts-db
-            labels:
-              app: cts-db
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
+            echo "=========================================="
+            echo "Deploying PostgreSQL Database"
+            echo "=========================================="
+
+            # Deploy PostgreSQL
+            kubectl apply -f - <<EOF
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: cts-db
+              labels:
                 app: cts-db
-            template:
-              metadata:
-                labels:
+            spec:
+              ports:
+              - port: 5432
+                targetPort: 5432
+              selector:
+                app: cts-db
+            ---
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: cts-db
+              labels:
+                app: cts-db
+            spec:
+              replicas: 1
+              selector:
+                matchLabels:
                   app: cts-db
-              spec:
-                containers:
-                - name: postgresql
-                  image: postgres:13-alpine
-                  env:
-                  - name: POSTGRES_DB
-                    value: cts
-                  - name: POSTGRES_USER
-                    value: cts
-                  - name: POSTGRES_PASSWORD
-                    value: cts-test
-                  - name: PGDATA
-                    value: /var/lib/postgresql/data/pgdata
-                  ports:
-                  - containerPort: 5432
-                  resources:
-                    requests:
-                      memory: "128Mi"
-                      cpu: "100m"
-                    limits:
-                      memory: "256Mi"
-                      cpu: "500m"
-                  readinessProbe:
-                    exec:
-                      command:
-                      - pg_isready
-                      - -U
-                      - cts
-                    initialDelaySeconds: 10
-                    periodSeconds: 5
-                    timeoutSeconds: 5
-                    failureThreshold: 6
-                  volumeMounts:
+              template:
+                metadata:
+                  labels:
+                    app: cts-db
+                spec:
+                  containers:
+                  - name: postgresql
+                    image: postgres:13-alpine
+                    env:
+                    - name: POSTGRES_DB
+                      value: cts
+                    - name: POSTGRES_USER
+                      value: cts
+                    - name: POSTGRES_PASSWORD
+                      value: cts-test
+                    - name: PGDATA
+                      value: /var/lib/postgresql/data/pgdata
+                    ports:
+                    - containerPort: 5432
+                    resources:
+                      requests:
+                        memory: "128Mi"
+                        cpu: "100m"
+                      limits:
+                        memory: "256Mi"
+                        cpu: "500m"
+                    readinessProbe:
+                      exec:
+                        command:
+                        - pg_isready
+                        - -U
+                        - cts
+                      initialDelaySeconds: 10
+                      periodSeconds: 5
+                      timeoutSeconds: 5
+                      failureThreshold: 6
+                    volumeMounts:
+                    - name: postgres-data
+                      mountPath: /var/lib/postgresql/data
+                  volumes:
                   - name: postgres-data
-                    mountPath: /var/lib/postgresql/data
-                volumes:
-                - name: postgres-data
-                  emptyDir: {}
-          EOF
+                    emptyDir: {}
+            EOF
 
-          echo "Waiting for database to be ready..."
+            echo "Waiting for database to be ready..."
 
-          # Check pod status first
-          echo ""
-          echo "Pod status:"
-          kubectl get pods -l app=cts-db
-
-          echo ""
-          echo "Deployment status:"
-          kubectl get deployment cts-db
-
-          # Wait with more detailed output on failure
-          if ! kubectl wait --for=condition=available --timeout=180s deployment/cts-db; then
+            # Check pod status first
             echo ""
-            echo "=========================================="
-            echo "Database deployment failed! Debug info:"
-            echo "=========================================="
+            echo "Pod status:"
+            kubectl get pods -l app=cts-db
 
             echo ""
-            echo "Deployment details:"
-            kubectl describe deployment cts-db
+            echo "Deployment status:"
+            kubectl get deployment cts-db
 
-            echo ""
-            echo "Pod details:"
-            kubectl describe pod -l app=cts-db
+            # Wait with more detailed output on failure
+            if ! kubectl wait --for=condition=available --timeout=180s deployment/cts-db; then
+              echo ""
+              echo "=========================================="
+              echo "Database deployment failed! Debug info:"
+              echo "=========================================="
 
-            echo ""
-            echo "Pod logs (if available):"
-            kubectl logs -l app=cts-db --tail=100 || echo "No logs available"
+              echo ""
+              echo "Deployment details:"
+              kubectl describe deployment cts-db
 
-            echo ""
-            echo "Events:"
-            kubectl get events --sort-by='.lastTimestamp'
+              echo ""
+              echo "Pod details:"
+              kubectl describe pod -l app=cts-db
 
-            exit 1
-          fi
+              echo ""
+              echo "Pod logs (if available):"
+              kubectl logs -l app=cts-db --tail=100 || echo "No logs available"
 
-          echo "✓ Database is ready"
-    params:
-    - name: kubeconfig-secret
-      value: $(tasks.provision-environment.results.secretRef)
+              echo ""
+              echo "Events:"
+              kubectl get events --sort-by='.lastTimestamp'
 
-  - name: deploy-cts
-    runAfter:
-    - deploy-database
-    - deploy-openldap
-    - deploy-dex
-    - deploy-kafka
-    when:
-    - input: $(tasks.parse-snapshot.results.ldap-server-present)
-      operator: in
-      values:
-      - "true"
-    taskSpec:
+              exit 1
+            fi
+
+            echo "✓ Database is ready"
       params:
       - name: kubeconfig-secret
-        type: string
-      - name: image-url
-        type: string
-      steps:
-      - name: create-service
-        image: quay.io/konflux-ci/appstudio-utils:latest
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
+        value: $(tasks.provision-environment.results.secretRef)
 
-          # Get kubeconfig from secret
-          KUBECONFIG=/tmp/kubeconfig
-          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-          export KUBECONFIG
+    - name: deploy-cts
+      runAfter:
+      - deploy-database
+      - deploy-openldap
+      - deploy-dex
+      - deploy-kafka
+      when:
+      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+        operator: in
+        values:
+        - "true"
+      taskSpec:
+        params:
+        - name: kubeconfig-secret
+          type: string
+        - name: image-url
+          type: string
+        steps:
+        - name: create-service
+          image: quay.io/konflux-ci/appstudio-utils:latest
+          script: |
+            #!/usr/bin/env bash
+            set -euo pipefail
 
-          IMAGE="$(params.image-url)"
+            # Get kubeconfig from secret
+            KUBECONFIG=/tmp/kubeconfig
+            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+            export KUBECONFIG
 
-          echo "=========================================="
-          echo "Deploying CTS Service"
-          echo "=========================================="
-          echo "Image: $IMAGE"
+            IMAGE="$(params.image-url)"
 
-          # Create ConfigMap with production configuration and httpd config for CTS
-          kubectl apply -f - <<'EOFYAML'
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: cts-config
-          data:
-            config.py: |
-              from conf.config import BaseConfiguration
+            echo "=========================================="
+            echo "Deploying CTS Service"
+            echo "=========================================="
+            echo "Image: $IMAGE"
 
-              class ProdConfiguration(BaseConfiguration):
-                  AUTH_BACKEND = "oidc_or_kerberos"
-                  SQLALCHEMY_DATABASE_URI = "postgresql://cts:cts-test@cts-db:5432/cts"
-                  AUTH_OPENIDC_USERINFO_URI = "https://dex:5556/userinfo"
-                  AUTH_OPENIDC_REQUIRED_SCOPES = ["openid"]
-                  AUTH_LDAP_SERVER = "ldap://openldap:1389"
-                  AUTH_LDAP_GROUPS = [
-                      ("ou=groups,dc=example,dc=com", "(&(objectClass=posixGroup)(memberUid={0}))"),
-                  ]
-                  ADMINS = {"groups": [], "users": ["builder@example.com"]}
-                  ALLOWED_BUILDERS = {"groups": [], "users": ["builder@example.com"]}
-                  MESSAGING_BACKEND = "kafka"
-                  MESSAGING_BROKER_URLS = ["kafka:9092"]
-                  MESSAGING_KAFKA_SECURITY_PROTOCOL = "PLAINTEXT"
-                  MESSAGING_KAFKA_SASL_MECHANISM = ""
-                  MESSAGING_KAFKA_USERNAME = ""
-                  MESSAGING_KAFKA_PASSWORD = ""
-                  MESSAGING_KAFKA_COMPRESSION_TYPE = "none"
-                  MESSAGING_TOPIC_PREFIX = "cts."
-            httpd.conf: |
-              ServerRoot "/etc/httpd"
-              PidFile /tmp/httpd.pid
-              Listen 0.0.0.0:8080 http
-              User apache
-              Group apache
-              DocumentRoot "/var/www/html"
-              ErrorLog /dev/stderr
-              TransferLog /dev/stdout
-              LogLevel warn
-              TypesConfig /etc/mime.types
-              DefaultRuntimeDir /tmp
+            # Create ConfigMap with production configuration and httpd config for CTS
+            kubectl apply -f - <<'EOFYAML'
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: cts-config
+            data:
+              config.py: |
+                from conf.config import BaseConfiguration
 
-              Include conf.modules.d/*.conf
+                class ProdConfiguration(BaseConfiguration):
+                    AUTH_BACKEND = "oidc_or_kerberos"
+                    SQLALCHEMY_DATABASE_URI = "postgresql://cts:cts-test@cts-db:5432/cts"
+                    AUTH_OPENIDC_USERINFO_URI = "https://dex:5556/userinfo"
+                    AUTH_OPENIDC_REQUIRED_SCOPES = ["openid"]
+                    AUTH_LDAP_SERVER = "ldap://openldap:1389"
+                    AUTH_LDAP_GROUPS = [
+                        ("ou=groups,dc=example,dc=com", "(&(objectClass=posixGroup)(memberUid={0}))"),
+                    ]
+                    ADMINS = {"groups": [], "users": ["builder@example.com"]}
+                    ALLOWED_BUILDERS = {"groups": [], "users": ["builder@example.com"]}
+                    MESSAGING_BACKEND = "kafka"
+                    MESSAGING_BROKER_URLS = ["kafka:9092"]
+                    MESSAGING_KAFKA_SECURITY_PROTOCOL = "PLAINTEXT"
+                    MESSAGING_KAFKA_SASL_MECHANISM = ""
+                    MESSAGING_KAFKA_USERNAME = ""
+                    MESSAGING_KAFKA_PASSWORD = ""
+                    MESSAGING_KAFKA_COMPRESSION_TYPE = "none"
+                    MESSAGING_TOPIC_PREFIX = "cts."
+              httpd.conf: |
+                ServerRoot "/etc/httpd"
+                PidFile /tmp/httpd.pid
+                Listen 0.0.0.0:8080 http
+                User apache
+                Group apache
+                DocumentRoot "/var/www/html"
+                ErrorLog /dev/stderr
+                TransferLog /dev/stdout
+                LogLevel warn
+                TypesConfig /etc/mime.types
+                DefaultRuntimeDir /tmp
 
-              OIDCProviderMetadataURL https://dex:5556/.well-known/openid-configuration
-              OIDCClientID cts-integration
-              OIDCClientSecret cts-integration-secret
-              OIDCRedirectURI http://cts:8080/redirect_uri
-              OIDCCryptoPassphrase changeme
-              OIDCRemoteUserClaim preferred_username
-              OIDCCABundlePath /etc/dex-ca/ca.crt
-              OIDCOAuthVerifyJwksUri https://dex:5556/keys
-              OIDCOAuthRemoteUserClaim email
-              OIDCUnAuthAction pass
+                Include conf.modules.d/*.conf
 
-              WSGISocketPrefix /tmp/wsgi
-              WSGIDaemonProcess cts threads=5 home=/usr/share/cts
-              WSGIScriptAlias / /usr/share/cts/cts.wsgi
+                OIDCProviderMetadataURL https://dex:5556/.well-known/openid-configuration
+                OIDCClientID cts-integration
+                OIDCClientSecret cts-integration-secret
+                OIDCRedirectURI http://cts:8080/redirect_uri
+                OIDCCryptoPassphrase changeme
+                OIDCRemoteUserClaim preferred_username
+                OIDCCABundlePath /etc/dex-ca/ca.crt
+                OIDCOAuthVerifyJwksUri https://dex:5556/keys
+                OIDCOAuthRemoteUserClaim email
+                OIDCUnAuthAction pass
 
-              <Directory /usr/share/cts>
-                  WSGIProcessGroup cts
-                  WSGIApplicationGroup %{GLOBAL}
-                  <If "%{HTTP:Authorization} =~ /^Bearer/">
-                      AuthType auth-openidc
-                      # Dex access tokens do not include a scope claim in the JWT payload.
-                      # Inject it here so load_openidc_user's validate_scopes() check passes.
-                      # Scoped to Bearer requests only so that Kerberos requests (which lack
-                      # OIDC_ environ variables) are still routed to load_krb_user_from_request
-                      # by load_oidc_or_krb_user_from_request instead of always hitting the
-                      # OIDC branch.
-                      SetEnv OIDC_CLAIM_scope "openid email"
-                  </If>
-                  <Else>
-                      AuthType openid-connect
-                  </Else>
-                  <RequireAny>
-                      <RequireAll>
-                          Require expr %{REQUEST_URI} !~ /userinfo/
-                          Require method GET
-                      </RequireAll>
-                      Require valid-user
-                  </RequireAny>
-              </Directory>
-          EOFYAML
+                WSGISocketPrefix /tmp/wsgi
+                WSGIDaemonProcess cts threads=5 home=/usr/share/cts
+                WSGIScriptAlias / /usr/share/cts/cts.wsgi
 
-          # Deploy CTS
-          kubectl apply -f - <<EOF
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: cts
-            labels:
-              app: cts
-          spec:
-            ports:
-            - port: 8080
-              targetPort: 8080
-              name: http
-            selector:
-              app: cts
-          ---
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: cts
-            labels:
-              app: cts
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
+                <Directory /usr/share/cts>
+                    WSGIProcessGroup cts
+                    WSGIApplicationGroup %{GLOBAL}
+                    <If "%{HTTP:Authorization} =~ /^Bearer/">
+                        AuthType auth-openidc
+                        # Dex access tokens do not include a scope claim in the JWT payload.
+                        # Inject it here so load_openidc_user's validate_scopes() check passes.
+                        # Scoped to Bearer requests only so that Kerberos requests (which lack
+                        # OIDC_ environ variables) are still routed to load_krb_user_from_request
+                        # by load_oidc_or_krb_user_from_request instead of always hitting the
+                        # OIDC branch.
+                        SetEnv OIDC_CLAIM_scope "openid email"
+                    </If>
+                    <Else>
+                        AuthType openid-connect
+                    </Else>
+                    <RequireAny>
+                        <RequireAll>
+                            Require expr %{REQUEST_URI} !~ /userinfo/
+                            Require method GET
+                        </RequireAll>
+                        Require valid-user
+                    </RequireAny>
+                </Directory>
+            EOFYAML
+
+            # Deploy CTS
+            kubectl apply -f - <<EOF
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: cts
+              labels:
                 app: cts
-            template:
-              metadata:
-                labels:
+            spec:
+              ports:
+              - port: 8080
+                targetPort: 8080
+                name: http
+              selector:
+                app: cts
+            ---
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: cts
+              labels:
+                app: cts
+            spec:
+              replicas: 1
+              selector:
+                matchLabels:
                   app: cts
-              spec:
-                initContainers:
-                - name: run-migrations
-                  image: $IMAGE
-                  command:
-                  - /bin/bash
-                  - -c
-                  - |
-                    set -e
-                    echo "Running database migrations..."
-                    cd /src
-                    cts-manager db upgrade
-                    echo "Migrations completed successfully"
-                  volumeMounts:
+              template:
+                metadata:
+                  labels:
+                    app: cts
+                spec:
+                  initContainers:
+                  - name: run-migrations
+                    image: $IMAGE
+                    command:
+                    - /bin/bash
+                    - -c
+                    - |
+                      set -e
+                      echo "Running database migrations..."
+                      cd /src
+                      cts-manager db upgrade
+                      echo "Migrations completed successfully"
+                    volumeMounts:
+                    - name: cts-config
+                      mountPath: /etc/cts
+                      readOnly: true
+                  containers:
+                  - name: cts
+                    image: $IMAGE
+                    command:
+                    - /bin/bash
+                    - -c
+                    - |
+                      set -e
+                      exec httpd -DFOREGROUND -f /etc/cts/httpd.conf
+                    ports:
+                    - containerPort: 8080
+                    env:
+                    - name: REQUESTS_CA_BUNDLE
+                      value: /etc/dex-ca/ca.crt
+                    resources:
+                      requests:
+                        memory: "256Mi"
+                        cpu: "200m"
+                      limits:
+                        memory: "512Mi"
+                        cpu: "1000m"
+                    readinessProbe:
+                      httpGet:
+                        path: /api/1/
+                        port: 8080
+                      initialDelaySeconds: 15
+                      periodSeconds: 5
+                      timeoutSeconds: 5
+                      failureThreshold: 12
+                    livenessProbe:
+                      httpGet:
+                        path: /api/1/
+                        port: 8080
+                      initialDelaySeconds: 30
+                      periodSeconds: 10
+                      timeoutSeconds: 5
+                    volumeMounts:
+                    - name: cts-config
+                      mountPath: /etc/cts
+                      readOnly: true
+                    - name: dex-ca
+                      mountPath: /etc/dex-ca
+                      readOnly: true
+                  volumes:
                   - name: cts-config
-                    mountPath: /etc/cts
-                    readOnly: true
-                containers:
-                - name: cts
-                  image: $IMAGE
-                  command:
-                  - /bin/bash
-                  - -c
-                  - |
-                    set -e
-                    exec httpd -DFOREGROUND -f /etc/cts/httpd.conf
-                  ports:
-                  - containerPort: 8080
-                  env:
-                  - name: REQUESTS_CA_BUNDLE
-                    value: /etc/dex-ca/ca.crt
-                  resources:
-                    requests:
-                      memory: "256Mi"
-                      cpu: "200m"
-                    limits:
-                      memory: "512Mi"
-                      cpu: "1000m"
-                  readinessProbe:
-                    httpGet:
-                      path: /api/1/
-                      port: 8080
-                    initialDelaySeconds: 15
-                    periodSeconds: 5
-                    timeoutSeconds: 5
-                    failureThreshold: 12
-                  livenessProbe:
-                    httpGet:
-                      path: /api/1/
-                      port: 8080
-                    initialDelaySeconds: 30
-                    periodSeconds: 10
-                    timeoutSeconds: 5
-                  volumeMounts:
-                  - name: cts-config
-                    mountPath: /etc/cts
-                    readOnly: true
+                    configMap:
+                      name: cts-config
                   - name: dex-ca
-                    mountPath: /etc/dex-ca
-                    readOnly: true
-                volumes:
-                - name: cts-config
-                  configMap:
-                    name: cts-config
-                - name: dex-ca
-                  secret:
-                    secretName: dex-ca
-          EOF
+                    secret:
+                      secretName: dex-ca
+            EOF
 
-          echo "Waiting for CTS service to be ready..."
+            echo "Waiting for CTS service to be ready..."
 
-          # Check pod status first
-          echo ""
-          echo "Pod status:"
-          kubectl get pods -l app=cts
-
-          echo ""
-          echo "Deployment status:"
-          kubectl get deployment cts
-
-          # Wait with more detailed output on failure
-          if ! kubectl wait --for=condition=available --timeout=300s deployment/cts; then
+            # Check pod status first
             echo ""
-            echo "=========================================="
-            echo "CTS deployment failed! Debug info:"
-            echo "=========================================="
+            echo "Pod status:"
+            kubectl get pods -l app=cts
 
             echo ""
-            echo "Deployment details:"
-            kubectl describe deployment cts
+            echo "Deployment status:"
+            kubectl get deployment cts
+
+            # Wait with more detailed output on failure
+            if ! kubectl wait --for=condition=available --timeout=300s deployment/cts; then
+              echo ""
+              echo "=========================================="
+              echo "CTS deployment failed! Debug info:"
+              echo "=========================================="
+
+              echo ""
+              echo "Deployment details:"
+              kubectl describe deployment cts
+
+              echo ""
+              echo "Pod details:"
+              kubectl describe pod -l app=cts
+
+              echo ""
+              echo "CTS Pod logs (if available):"
+              kubectl logs -l app=cts --tail=100 || echo "No logs available"
+
+              echo ""
+              echo "Database pod status (for reference):"
+              kubectl get pod -l app=cts-db
+
+              echo ""
+              echo "Events:"
+              kubectl get events --sort-by='.lastTimestamp' | tail -30
+
+              exit 1
+            fi
 
             echo ""
-            echo "Pod details:"
-            kubectl describe pod -l app=cts
-
-            echo ""
-            echo "CTS Pod logs (if available):"
-            kubectl logs -l app=cts --tail=100 || echo "No logs available"
-
-            echo ""
-            echo "Database pod status (for reference):"
-            kubectl get pod -l app=cts-db
-
-            echo ""
-            echo "Events:"
-            kubectl get events --sort-by='.lastTimestamp' | tail -30
-
-            exit 1
-          fi
-
-          echo ""
-          echo "✓ CTS service is ready"
-    params:
-    - name: kubeconfig-secret
-      value: $(tasks.provision-environment.results.secretRef)
-    - name: image-url
-      value: $(tasks.parse-snapshot.results.image-url)
-
-  - name: run-tests
-    runAfter:
-    - deploy-cts
-    when:
-    - input: $(tasks.parse-snapshot.results.ldap-server-present)
-      operator: in
-      values:
-      - "true"
-    taskSpec:
+            echo "✓ CTS service is ready"
       params:
       - name: kubeconfig-secret
-        type: string
+        value: $(tasks.provision-environment.results.secretRef)
+      - name: image-url
+        value: $(tasks.parse-snapshot.results.image-url)
+
+    - name: run-tests
+      runAfter:
+      - deploy-cts
+      when:
+      - input: $(tasks.parse-snapshot.results.ldap-server-present)
+        operator: in
+        values:
+        - "true"
+      taskSpec:
+        params:
+        - name: kubeconfig-secret
+          type: string
+        - name: git-url
+          type: string
+        - name: git-revision
+          type: string
+        results:
+        - name: test-result
+          description: Test execution result
+        steps:
+        - name: execute-tests
+          image: quay.io/konflux-ci/appstudio-utils:latest
+          script: |
+            #!/usr/bin/env bash
+            set -euo pipefail
+
+            echo "=========================================="
+            echo "Running Integration Tests"
+            echo "=========================================="
+
+            # Get kubeconfig
+            KUBECONFIG=/tmp/kubeconfig
+            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
+            export KUBECONFIG
+
+            # Get the namespace
+            NAMESPACE=$(kubectl config view --minify -o jsonpath='{..namespace}')
+            echo "Ephemeral namespace: $NAMESPACE"
+            echo ""
+
+            echo "Creating test runner pod in namespace: $NAMESPACE"
+
+            # Retrieve the Dex CA cert so the test runner pod can trust Dex over HTTPS
+            DEX_CA_B64=$(kubectl get secret dex-ca -o jsonpath='{.data.ca\.crt}')
+
+            # Create a test runner pod in the target namespace (using appstudio-utils which has git and python)
+            kubectl run cts-test-runner \
+              --image=quay.io/konflux-ci/appstudio-utils:latest \
+              --namespace=$NAMESPACE \
+              --restart=Never \
+              --command -- sleep 3600
+
+            # Wait for pod to be ready
+            echo "Waiting for test runner pod to be ready..."
+            kubectl wait --for=condition=Ready pod/cts-test-runner -n $NAMESPACE --timeout=60s
+
+            GIT_URL='$(params.git-url)'
+            GIT_REV='$(params.git-revision)'
+
+            echo ""
+            echo "Running tests in pod..."
+            echo "CTS URL: http://cts:8080"
+            echo ""
+
+            # Run the tests - temporarily disable exit-on-error to capture result
+            set +e
+            kubectl exec cts-test-runner -n $NAMESPACE -- bash -c "
+              set -ex
+              export HOME=/tmp
+
+              echo 'Installing Dex CA certificate...'
+              echo '$DEX_CA_B64' | base64 -d > /tmp/dex-ca.crt
+
+              echo 'Installing pytest, requests, and kafka-python...'
+              python3 -m ensurepip
+              python3 -m pip install --target /tmp/test-deps --quiet pytest requests kafka-python
+
+              echo ''
+              echo 'Cloning repository...'
+              cd /tmp
+              git clone --depth 1 '$GIT_URL' cts-repo
+              cd cts-repo
+              git fetch --depth 1 origin '$GIT_REV'
+              git checkout '$GIT_REV'
+
+              echo ''
+              echo 'Running pytest...'
+              PYTHONPATH=/tmp/test-deps REQUESTS_CA_BUNDLE=/tmp/dex-ca.crt CTS_URL=http://cts:8080 AUTH_BACKEND=oidc_or_kerberos DEX_URL=https://dex:5556 KAFKA_URL=kafka:9092 python3 -m pytest tests/test_integration_api.py -v -s -o addopts=
+            "
+            TEST_RESULT=$?
+            set -e
+
+            # Clean up test runner pod
+            echo ""
+            echo "Cleaning up test runner pod..."
+            kubectl delete pod cts-test-runner -n $NAMESPACE --ignore-not-found=true
+
+            if [ $TEST_RESULT -eq 0 ]; then
+              echo ""
+              echo "✓ All tests passed!"
+              echo "passed" | tee $(results.test-result.path)
+              exit 0
+            else
+              echo ""
+              echo "✗ Tests failed!"
+              echo "failed" | tee $(results.test-result.path)
+
+              # Show CTS pod logs for debugging
+              echo ""
+              echo "=========================================="
+              echo "CTS Pod Logs (last 50 lines):"
+              echo "=========================================="
+
+              CTS_POD=$(kubectl get pod -l app=cts -n $NAMESPACE -o jsonpath='{.items[0].metadata.name}')
+              kubectl logs $CTS_POD -n $NAMESPACE --tail=50 || true
+
+              exit 1
+            fi
+      params:
+      - name: kubeconfig-secret
+        value: $(tasks.provision-environment.results.secretRef)
       - name: git-url
-        type: string
+        value: $(tasks.parse-snapshot.results.git-url)
       - name: git-revision
-        type: string
-      results:
-      - name: test-result
-        description: Test execution result
-      steps:
-      - name: execute-tests
-        image: quay.io/konflux-ci/appstudio-utils:latest
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
+        value: $(tasks.parse-snapshot.results.git-revision)
 
-          echo "=========================================="
-          echo "Running Integration Tests"
-          echo "=========================================="
-
-          # Get kubeconfig
-          KUBECONFIG=/tmp/kubeconfig
-          kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-          export KUBECONFIG
-
-          # Get the namespace
-          NAMESPACE=$(kubectl config view --minify -o jsonpath='{..namespace}')
-          echo "Ephemeral namespace: $NAMESPACE"
-          echo ""
-
-          echo "Creating test runner pod in namespace: $NAMESPACE"
-
-          # Retrieve the Dex CA cert so the test runner pod can trust Dex over HTTPS
-          DEX_CA_B64=$(kubectl get secret dex-ca -o jsonpath='{.data.ca\.crt}')
-
-          # Create a test runner pod in the target namespace (using appstudio-utils which has git and python)
-          kubectl run cts-test-runner \
-            --image=quay.io/konflux-ci/appstudio-utils:latest \
-            --namespace=$NAMESPACE \
-            --restart=Never \
-            --command -- sleep 3600
-
-          # Wait for pod to be ready
-          echo "Waiting for test runner pod to be ready..."
-          kubectl wait --for=condition=Ready pod/cts-test-runner -n $NAMESPACE --timeout=60s
-
-          GIT_URL='$(params.git-url)'
-          GIT_REV='$(params.git-revision)'
-
-          echo ""
-          echo "Running tests in pod..."
-          echo "CTS URL: http://cts:8080"
-          echo ""
-
-          # Run the tests - temporarily disable exit-on-error to capture result
-          set +e
-          kubectl exec cts-test-runner -n $NAMESPACE -- bash -c "
-            set -ex
-            export HOME=/tmp
-
-            echo 'Installing Dex CA certificate...'
-            echo '$DEX_CA_B64' | base64 -d > /tmp/dex-ca.crt
-
-            echo 'Installing pytest, requests, and kafka-python...'
-            python3 -m ensurepip
-            python3 -m pip install --target /tmp/test-deps --quiet pytest requests kafka-python
-
-            echo ''
-            echo 'Cloning repository...'
-            cd /tmp
-            git clone --depth 1 '$GIT_URL' cts-repo
-            cd cts-repo
-            git fetch --depth 1 origin '$GIT_REV'
-            git checkout '$GIT_REV'
-
-            echo ''
-            echo 'Running pytest...'
-            PYTHONPATH=/tmp/test-deps REQUESTS_CA_BUNDLE=/tmp/dex-ca.crt CTS_URL=http://cts:8080 AUTH_BACKEND=oidc_or_kerberos DEX_URL=https://dex:5556 KAFKA_URL=kafka:9092 python3 -m pytest tests/test_integration_api.py -v -s -o addopts=
-          "
-          TEST_RESULT=$?
-          set -e
-
-          # Clean up test runner pod
-          echo ""
-          echo "Cleaning up test runner pod..."
-          kubectl delete pod cts-test-runner -n $NAMESPACE --ignore-not-found=true
-
-          if [ $TEST_RESULT -eq 0 ]; then
-            echo ""
-            echo "✓ All tests passed!"
-            echo "passed" | tee $(results.test-result.path)
-            exit 0
-          else
-            echo ""
-            echo "✗ Tests failed!"
-            echo "failed" | tee $(results.test-result.path)
-
-            # Show CTS pod logs for debugging
-            echo ""
-            echo "=========================================="
-            echo "CTS Pod Logs (last 50 lines):"
-            echo "=========================================="
-
-            CTS_POD=$(kubectl get pod -l app=cts -n $NAMESPACE -o jsonpath='{.items[0].metadata.name}')
-            kubectl logs $CTS_POD -n $NAMESPACE --tail=50 || true
-
-            exit 1
-          fi
-    params:
-    - name: kubeconfig-secret
-      value: $(tasks.provision-environment.results.secretRef)
-    - name: git-url
-      value: $(tasks.parse-snapshot.results.git-url)
-    - name: git-revision
-      value: $(tasks.parse-snapshot.results.git-revision)
-
-  finally:
-  - name: report-result
-    params:
-    - name: ldap-server-present
-      value: $(tasks.parse-snapshot.results.ldap-server-present)
-    - name: test-result
-      value: $(tasks.run-tests.results.test-result)
-    taskSpec:
+    finally:
+    - name: report-result
       params:
       - name: ldap-server-present
-        type: string
+        value: $(tasks.parse-snapshot.results.ldap-server-present)
       - name: test-result
-        type: string
-        default: ""
-      results:
-      - name: test-output
-        description: Final test output result
-      steps:
-      - name: emit-result
-        image: quay.io/konflux-ci/appstudio-utils:latest
-        script: |
-          #!/usr/bin/env bash
-          if [ "$(params.ldap-server-present)" = "false" ]; then
-            echo "ldap-server image was not available in the Snapshot; test skipped."
-            echo -n "skipped" | tee $(results.test-output.path)
-          else
-            echo -n "$(params.test-result)" | tee $(results.test-output.path)
-          fi
+        value: $(tasks.run-tests.results.test-result)
+      taskSpec:
+        params:
+        - name: ldap-server-present
+          type: string
+        - name: test-result
+          type: string
+          default: ""
+        results:
+        - name: test-output
+          description: Final test output result
+        steps:
+        - name: emit-result
+          image: quay.io/konflux-ci/appstudio-utils:latest
+          script: |
+            #!/usr/bin/env bash
+            if [ "$(params.ldap-server-present)" = "false" ]; then
+              echo "ldap-server image was not available in the Snapshot; test skipped."
+              echo -n "skipped" | tee $(results.test-output.path)
+            else
+              echo -n "$(params.test-result)" | tee $(results.test-output.path)
+            fi
 
-  results:
-  - name: TEST_OUTPUT
-    value: $(finally.report-result.results.test-output)
+    results:
+    - name: TEST_OUTPUT
+      value: $(finally.report-result.results.test-output)
+
