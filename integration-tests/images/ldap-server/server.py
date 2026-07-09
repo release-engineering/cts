@@ -13,6 +13,10 @@ from ldaptor.inmemory import fromLDIFFile
 from ldaptor.interfaces import IConnectedLDAPEntry
 from ldaptor.protocols.ldap.ldapserver import LDAPServer
 
+LDIF_PATH = "/etc/ldap-data/groups.ldif"
+
+# Fallback data used when the ConfigMap volume is not mounted
+# (e.g. when running against a pipeline that predates the workspace/ConfigMap setup).
 LDIF = b"""\
 dn: dc=example,dc=com
 dc: example
@@ -40,6 +44,17 @@ memberUid: readonly@example.com
 
 """
 
+try:
+    with open(LDIF_PATH, "rb") as f:
+        ldif_data = f.read()
+    print(f"Loaded LDIF data from {LDIF_PATH}", flush=True)
+except FileNotFoundError:
+    print(
+        f"Warning: {LDIF_PATH} not found; falling back to built-in LDIF data",
+        flush=True,
+    )
+    ldif_data = LDIF
+
 
 class LDAPServerFactory(ServerFactory):
     protocol = LDAPServer
@@ -64,6 +79,6 @@ def start(root):
     print("LDAP server listening on port 1389", flush=True)
 
 
-d = fromLDIFFile(io.BytesIO(LDIF))
+d = fromLDIFFile(io.BytesIO(ldif_data))
 d.addCallback(start)
 reactor.run()
