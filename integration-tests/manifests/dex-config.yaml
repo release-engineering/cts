@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dex-config
+data:
+  config.yaml: |
+    issuer: https://dex:5556
+
+    storage:
+      type: memory
+
+    web:
+      https: 0.0.0.0:5556
+      tlsCert: /etc/dex/tls/tls.crt
+      tlsKey: /etc/dex/tls/tls.key
+
+    logger:
+      level: debug
+
+    enablePasswordDB: true
+
+    staticPasswords:
+    - email: builder@example.com
+      hash: "$2y$10$6cZyh42YBb2Q5.fE9nj3mu3UHs21NUmVP2fpU63EM3/ecJuHVscEC"
+      username: builder
+      userID: "builder"
+    - email: readonly@example.com
+      hash: "$2y$10$6cZyh42YBb2Q5.fE9nj3mu3UHs21NUmVP2fpU63EM3/ecJuHVscEC"
+      username: readonly
+      userID: "readonly"
+
+    staticClients:
+    - id: cts-integration
+      secret: cts-integration-secret
+      name: CTS Integration
+      redirectURIs:
+      - http://cts:8080/redirect_uri
+      grantTypes:
+      - password
+      - authorization_code
+
+    oauth2:
+      skipApprovalScreen: true
+      passwordConnector: local

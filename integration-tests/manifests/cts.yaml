@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cts
+  labels:
+    app: cts
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: cts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cts
+  labels:
+    app: cts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cts
+  template:
+    metadata:
+      labels:
+        app: cts
+    spec:
+      initContainers:
+      - name: run-migrations
+        image: ${IMAGE}
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Running database migrations..."
+          cd /src
+          cts-manager db upgrade
+          echo "Migrations completed successfully"
+        volumeMounts:
+        - name: cts-config
+          mountPath: /etc/cts
+          readOnly: true
+      containers:
+      - name: cts
+        image: ${IMAGE}
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          exec httpd -DFOREGROUND -f /etc/cts/httpd.conf
+        ports:
+        - containerPort: 8080
+        env:
+        - name: REQUESTS_CA_BUNDLE
+          value: /etc/dex-ca/ca.crt
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+        readinessProbe:
+          httpGet:
+            path: /api/1/
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 12
+        livenessProbe:
+          httpGet:
+            path: /api/1/
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: cts-config
+          mountPath: /etc/cts
+          readOnly: true
+        - name: dex-ca
+          mountPath: /etc/dex-ca
+          readOnly: true
+      volumes:
+      - name: cts-config
+        configMap:
+          name: cts-config
+      - name: dex-ca
+        secret:
+          secretName: dex-ca
