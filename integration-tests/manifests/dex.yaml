@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dex
+  labels:
+    app: dex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dex
+  template:
+    metadata:
+      labels:
+        app: dex
+    spec:
+      containers:
+      - name: dex
+        image: ghcr.io/dexidp/dex:v2.41.1
+        args: ["dex", "serve", "/etc/dex/config.yaml"]
+        ports:
+        - containerPort: 5556
+          name: https
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /.well-known/openid-configuration
+            port: 5556
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 12
+        volumeMounts:
+        - name: dex-config
+          mountPath: /etc/dex
+          readOnly: true
+        - name: dex-tls
+          mountPath: /etc/dex/tls
+          readOnly: true
+      volumes:
+      - name: dex-config
+        configMap:
+          name: dex-config
+      - name: dex-tls
+        secret:
+          secretName: dex-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dex
+  labels:
+    app: dex
+spec:
+  ports:
+  - port: 5556
+    targetPort: 5556
+    name: https
+  selector:
+    app: dex

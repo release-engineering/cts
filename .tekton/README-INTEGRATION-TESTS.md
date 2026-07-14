@@ -119,11 +119,23 @@ No need to manually register tests or track results.
 
 ### Modifying the Test Environment
 
-Edit `.tekton/integration-test-eaas.yaml` to change:
+The Kubernetes manifests for each service are maintained as separate YAML files
+under `integration-tests/manifests/`:
 
-- Database configuration (in the `deploy-database` task's Deployment spec)
-- CTS environment variables (in the `deploy-cts` task's Deployment spec)
-- Test execution logic (in the `run-tests` task's Python script)
+| File | Description |
+|------|-------------|
+| `openldap.yaml` | OpenLDAP Deployment and Service |
+| `dex-config.yaml` | Dex OIDC provider ConfigMap |
+| `dex.yaml` | Dex Deployment and Service |
+| `kafka.yaml` | Kafka Deployment and Service |
+| `postgres.yaml` | PostgreSQL Service and Deployment |
+| `config.py` | CTS application configuration (assembled into a ConfigMap at deploy time) |
+| `httpd.conf` | CTS Apache/WSGI configuration (assembled into a ConfigMap at deploy time) |
+| `cts.yaml` | CTS Service and Deployment |
+
+To change deployment configuration, edit the relevant manifest file directly.
+For test execution logic, edit the `run-tests` task script in
+`.tekton/integration-test-eaas.yaml`.
 
 
 ## Related Documentation

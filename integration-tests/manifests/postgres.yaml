@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cts-db
+  labels:
+    app: cts-db
+spec:
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: cts-db
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cts-db
+  labels:
+    app: cts-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cts-db
+  template:
+    metadata:
+      labels:
+        app: cts-db
+    spec:
+      containers:
+      - name: postgresql
+        image: postgres:13-alpine
+        env:
+        - name: POSTGRES_DB
+          value: cts
+        - name: POSTGRES_USER
+          value: cts
+        - name: POSTGRES_PASSWORD
+          value: cts-test
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        ports:
+        - containerPort: 5432
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - cts
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 6
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: postgres-data
+        emptyDir: {}

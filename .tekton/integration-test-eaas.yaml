@@ -219,66 +219,10 @@ spec:
             kubectl create configmap ldap-data \
               --from-file=groups.ldif="$(workspaces.source.path)/cts-repo/integration-tests/data/groups.ldif"
 
-            kubectl apply -f - <<EOFYAML
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: openldap
-              labels:
-                app: openldap
-            spec:
-              replicas: 1
-              selector:
-                matchLabels:
-                  app: openldap
-              template:
-                metadata:
-                  labels:
-                    app: openldap
-                spec:
-                  containers:
-                  - name: openldap
-                    image: $LDAP_IMAGE
-                    ports:
-                    - containerPort: 1389
-                      name: ldap
-                    readinessProbe:
-                      tcpSocket:
-                        port: 1389
-                      initialDelaySeconds: 15
-                      periodSeconds: 5
-                      timeoutSeconds: 3
-                      failureThreshold: 12
-                    resources:
-                      requests:
-                        memory: "128Mi"
-                        cpu: "50m"
-                      limits:
-                        memory: "256Mi"
-                        cpu: "200m"
-                    volumeMounts:
-                    - name: ldap-data
-                      mountPath: /etc/ldap-data
-                      readOnly: true
-                  volumes:
-                  - name: ldap-data
-                    configMap:
-                      name: ldap-data
-            ---
-            apiVersion: v1
-            kind: Service
-            metadata:
-              name: openldap
-              labels:
-                app: openldap
-            spec:
-              ports:
-              - port: 1389
-                targetPort: 1389
-                name: ldap
-              selector:
-                app: openldap
-            EOFYAML
+            sed "s|\${LDAP_IMAGE}|${LDAP_IMAGE}|g" \
+              "$(workspaces.source.path)/cts-repo/integration-tests/manifests/openldap.yaml" \
+              > /tmp/openldap-rendered.yaml
+            kubectl apply -f /tmp/openldap-rendered.yaml
 
             echo "Waiting for LDAP server to be ready..."
             if ! kubectl wait --for=condition=available --timeout=180s deployment/openldap; then
@@ -298,12 +242,18 @@ spec:
     - name: deploy-dex
       runAfter:
       - provision-environment
+      - clone-repo
       when:
       - input: $(tasks.test-metadata.results.ldap-server-present)
         operator: in
         values:
         - "true"
+      workspaces:
+      - name: source
+        workspace: source
       taskSpec:
+        workspaces:
+        - name: source
         params:
         - name: kubeconfig-secret
           type: string
@@ -364,122 +314,9 @@ spec:
             echo "Deploying Dex OIDC Provider"
             echo "=========================================="
 
-            kubectl apply -f - <<'EOFYAML'
-            apiVersion: v1
-            kind: ConfigMap
-            metadata:
-              name: dex-config
-            data:
-              config.yaml: |
-                issuer: https://dex:5556
+            kubectl apply -f "$(workspaces.source.path)/cts-repo/integration-tests/manifests/dex-config.yaml"
 
-                storage:
-                  type: memory
-
-                web:
-                  https: 0.0.0.0:5556
-                  tlsCert: /etc/dex/tls/tls.crt
-                  tlsKey: /etc/dex/tls/tls.key
-
-                logger:
-                  level: debug
-
-                enablePasswordDB: true
-
-                staticPasswords:
-                - email: builder@example.com
-                  hash: "$2y$10$6cZyh42YBb2Q5.fE9nj3mu3UHs21NUmVP2fpU63EM3/ecJuHVscEC"
-                  username: builder
-                  userID: "builder"
-                - email: readonly@example.com
-                  hash: "$2y$10$6cZyh42YBb2Q5.fE9nj3mu3UHs21NUmVP2fpU63EM3/ecJuHVscEC"
-                  username: readonly
-                  userID: "readonly"
-
-                staticClients:
-                - id: cts-integration
-                  secret: cts-integration-secret
-                  name: CTS Integration
-                  redirectURIs:
-                  - http://cts:8080/redirect_uri
-                  grantTypes:
-                  - password
-                  - authorization_code
-
-                oauth2:
-                  skipApprovalScreen: true
-                  passwordConnector: local
-            EOFYAML
-
-            kubectl apply -f - <<'EOFYAML'
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: dex
-              labels:
-                app: dex
-            spec:
-              replicas: 1
-              selector:
-                matchLabels:
-                  app: dex
-              template:
-                metadata:
-                  labels:
-                    app: dex
-                spec:
-                  containers:
-                  - name: dex
-                    image: ghcr.io/dexidp/dex:v2.41.1
-                    args: ["dex", "serve", "/etc/dex/config.yaml"]
-                    ports:
-                    - containerPort: 5556
-                      name: https
-                    resources:
-                      requests:
-                        memory: "64Mi"
-                        cpu: "50m"
-                      limits:
-                        memory: "256Mi"
-                        cpu: "500m"
-                    readinessProbe:
-                      httpGet:
-                        path: /.well-known/openid-configuration
-                        port: 5556
-                        scheme: HTTPS
-                      initialDelaySeconds: 5
-                      periodSeconds: 5
-                      timeoutSeconds: 5
-                      failureThreshold: 12
-                    volumeMounts:
-                    - name: dex-config
-                      mountPath: /etc/dex
-                      readOnly: true
-                    - name: dex-tls
-                      mountPath: /etc/dex/tls
-                      readOnly: true
-                  volumes:
-                  - name: dex-config
-                    configMap:
-                      name: dex-config
-                  - name: dex-tls
-                    secret:
-                      secretName: dex-tls
-            ---
-            apiVersion: v1
-            kind: Service
-            metadata:
-              name: dex
-              labels:
-                app: dex
-            spec:
-              ports:
-              - port: 5556
-                targetPort: 5556
-                name: https
-              selector:
-                app: dex
-            EOFYAML
+            kubectl apply -f "$(workspaces.source.path)/cts-repo/integration-tests/manifests/dex.yaml"
 
             echo "Waiting for Dex to be ready..."
             if ! kubectl wait --for=condition=available --timeout=180s deployment/dex; then
@@ -497,7 +334,13 @@ spec:
     - name: deploy-kafka
       runAfter:
       - provision-environment
+      - clone-repo
+      workspaces:
+      - name: source
+        workspace: source
       taskSpec:
+        workspaces:
+        - name: source
         params:
         - name: kubeconfig-secret
           type: string
@@ -516,109 +359,7 @@ spec:
             echo "Deploying Kafka (Apache KRaft single-node)"
             echo "=========================================="
 
-            kubectl apply -f - <<'EOFYAML'
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: kafka
-              labels:
-                app: kafka
-            spec:
-              replicas: 1
-              selector:
-                matchLabels:
-                  app: kafka
-              template:
-                metadata:
-                  labels:
-                    app: kafka
-                spec:
-                  initContainers:
-                  - name: copy-kafka-config
-                    image: docker.io/apache/kafka:3.9.2
-                    command: ["/bin/sh", "-c", "cp -r /opt/kafka/config/. /mnt/kafka-config/"]
-                    volumeMounts:
-                    - name: kafka-config
-                      mountPath: /mnt/kafka-config
-                  containers:
-                  - name: kafka
-                    image: docker.io/apache/kafka:3.9.2
-                    ports:
-                    - containerPort: 9092
-                      name: client
-                    - containerPort: 9093
-                      name: controller
-                    env:
-                    - name: KAFKA_NODE_ID
-                      value: "1"
-                    - name: KAFKA_PROCESS_ROLES
-                      value: "broker,controller"
-                    - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-                      value: "1@localhost:9093"
-                    - name: KAFKA_LISTENERS
-                      value: "PLAINTEXT://:9092,CONTROLLER://:9093"
-                    - name: KAFKA_ADVERTISED_LISTENERS
-                      value: "PLAINTEXT://kafka:9092"
-                    - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-                      value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
-                    - name: KAFKA_CONTROLLER_LISTENER_NAMES
-                      value: "CONTROLLER"
-                    - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
-                      value: "true"
-                    - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
-                      value: "1"
-                    - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
-                      value: "1"
-                    - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
-                      value: "1"
-                    - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
-                      value: "0"
-                    resources:
-                      requests:
-                        memory: "256Mi"
-                        cpu: "100m"
-                      limits:
-                        memory: "512Mi"
-                        cpu: "500m"
-                    readinessProbe:
-                      tcpSocket:
-                        port: 9092
-                      initialDelaySeconds: 20
-                      periodSeconds: 5
-                      timeoutSeconds: 3
-                      failureThreshold: 24
-                    volumeMounts:
-                    - name: kafka-config
-                      mountPath: /opt/kafka/config
-                    - name: kafka-logs
-                      mountPath: /tmp/kafka-logs
-                    - name: kafka-gc-logs
-                      mountPath: /opt/kafka/logs
-                  volumes:
-                  - name: kafka-config
-                    emptyDir: {}
-                  - name: kafka-logs
-                    emptyDir: {}
-                  - name: kafka-gc-logs
-                    emptyDir: {}
-            ---
-            apiVersion: v1
-            kind: Service
-            metadata:
-              name: kafka
-              labels:
-                app: kafka
-            spec:
-              ports:
-              - port: 9092
-                targetPort: 9092
-                name: client
-              - port: 9093
-                targetPort: 9093
-                name: controller
-              selector:
-                app: kafka
-            EOFYAML
+            kubectl apply -f "$(workspaces.source.path)/cts-repo/integration-tests/manifests/kafka.yaml"
 
             echo "Waiting for Kafka to be ready..."
             if ! kubectl wait --for=condition=available --timeout=300s deployment/kafka; then
@@ -636,12 +377,18 @@ spec:
     - name: deploy-database
       runAfter:
       - provision-environment
+      - clone-repo
       when:
       - input: $(tasks.test-metadata.results.ldap-server-present)
         operator: in
         values:
         - "true"
+      workspaces:
+      - name: source
+        workspace: source
       taskSpec:
+        workspaces:
+        - name: source
         params:
         - name: kubeconfig-secret
           type: string
@@ -662,74 +409,7 @@ spec:
             echo "=========================================="
 
             # Deploy PostgreSQL
-            kubectl apply -f - <<EOF
-            apiVersion: v1
-            kind: Service
-            metadata:
-              name: cts-db
-              labels:
-                app: cts-db
-            spec:
-              ports:
-              - port: 5432
-                targetPort: 5432
-              selector:
-                app: cts-db
-            ---
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: cts-db
-              labels:
-                app: cts-db
-            spec:
-              replicas: 1
-              selector:
-                matchLabels:
-                  app: cts-db
-              template:
-                metadata:
-                  labels:
-                    app: cts-db
-                spec:
-                  containers:
-                  - name: postgresql
-                    image: postgres:13-alpine
-                    env:
-                    - name: POSTGRES_DB
-                      value: cts
-                    - name: POSTGRES_USER
-                      value: cts
-                    - name: POSTGRES_PASSWORD
-                      value: cts-test
-                    - name: PGDATA
-                      value: /var/lib/postgresql/data/pgdata
-                    ports:
-                    - containerPort: 5432
-                    resources:
-                      requests:
-                        memory: "128Mi"
-                        cpu: "100m"
-                      limits:
-                        memory: "256Mi"
-                        cpu: "500m"
-                    readinessProbe:
-                      exec:
-                        command:
-                        - pg_isready
-                        - -U
-                        - cts
-                      initialDelaySeconds: 10
-                      periodSeconds: 5
-                      timeoutSeconds: 5
-                      failureThreshold: 6
-                    volumeMounts:
-                    - name: postgres-data
-                      mountPath: /var/lib/postgresql/data
-                  volumes:
-                  - name: postgres-data
-                    emptyDir: {}
-            EOF
+            kubectl apply -f "$(workspaces.source.path)/cts-repo/integration-tests/manifests/postgres.yaml"
 
             echo "Waiting for database to be ready..."
 
@@ -784,7 +464,12 @@ spec:
         operator: in
         values:
         - "true"
+      workspaces:
+      - name: source
+        workspace: source
       taskSpec:
+        workspaces:
+        - name: source
         params:
         - name: kubeconfig-secret
           type: string
@@ -810,189 +495,17 @@ spec:
             echo "Image: $IMAGE"
 
             # Create ConfigMap with production configuration and httpd config for CTS
-            kubectl apply -f - <<'EOFYAML'
-            apiVersion: v1
-            kind: ConfigMap
-            metadata:
-              name: cts-config
-            data:
-              config.py: |
-                from conf.config import BaseConfiguration
-
-                class ProdConfiguration(BaseConfiguration):
-                    AUTH_BACKEND = "oidc_or_kerberos"
-                    SQLALCHEMY_DATABASE_URI = "postgresql://cts:cts-test@cts-db:5432/cts"
-                    AUTH_OPENIDC_USERINFO_URI = "https://dex:5556/userinfo"
-                    AUTH_OPENIDC_REQUIRED_SCOPES = ["openid"]
-                    AUTH_LDAP_SERVER = "ldap://openldap:1389"
-                    AUTH_LDAP_GROUPS = [
-                        ("ou=groups,dc=example,dc=com", "(&(objectClass=posixGroup)(memberUid={0}))"),
-                    ]
-                    ADMINS = {"groups": [], "users": ["builder@example.com"]}
-                    ALLOWED_BUILDERS = {"groups": [], "users": ["builder@example.com"]}
-                    MESSAGING_BACKEND = "kafka"
-                    MESSAGING_BROKER_URLS = ["kafka:9092"]
-                    MESSAGING_KAFKA_SECURITY_PROTOCOL = "PLAINTEXT"
-                    MESSAGING_KAFKA_SASL_MECHANISM = ""
-                    MESSAGING_KAFKA_USERNAME = ""
-                    MESSAGING_KAFKA_PASSWORD = ""
-                    MESSAGING_KAFKA_COMPRESSION_TYPE = "none"
-                    MESSAGING_TOPIC_PREFIX = "cts."
-              httpd.conf: |
-                ServerRoot "/etc/httpd"
-                PidFile /tmp/httpd.pid
-                Listen 0.0.0.0:8080 http
-                User apache
-                Group apache
-                DocumentRoot "/var/www/html"
-                ErrorLog /dev/stderr
-                TransferLog /dev/stdout
-                LogLevel warn
-                TypesConfig /etc/mime.types
-                DefaultRuntimeDir /tmp
-
-                Include conf.modules.d/*.conf
-
-                OIDCProviderMetadataURL https://dex:5556/.well-known/openid-configuration
-                OIDCClientID cts-integration
-                OIDCClientSecret cts-integration-secret
-                OIDCRedirectURI http://cts:8080/redirect_uri
-                OIDCCryptoPassphrase changeme
-                OIDCRemoteUserClaim preferred_username
-                OIDCCABundlePath /etc/dex-ca/ca.crt
-                OIDCOAuthVerifyJwksUri https://dex:5556/keys
-                OIDCOAuthRemoteUserClaim email
-                OIDCUnAuthAction pass
-
-                WSGISocketPrefix /tmp/wsgi
-                WSGIDaemonProcess cts threads=5 home=/usr/share/cts
-                WSGIScriptAlias / /usr/share/cts/cts.wsgi
-
-                <Directory /usr/share/cts>
-                    WSGIProcessGroup cts
-                    WSGIApplicationGroup %{GLOBAL}
-                    <If "%{HTTP:Authorization} =~ /^Bearer/">
-                        AuthType auth-openidc
-                        # Dex access tokens do not include a scope claim in the JWT payload.
-                        # Inject it here so load_openidc_user's validate_scopes() check passes.
-                        # Scoped to Bearer requests only so that Kerberos requests (which lack
-                        # OIDC_ environ variables) are still routed to load_krb_user_from_request
-                        # by load_oidc_or_krb_user_from_request instead of always hitting the
-                        # OIDC branch.
-                        SetEnv OIDC_CLAIM_scope "openid email"
-                    </If>
-                    <Else>
-                        AuthType openid-connect
-                    </Else>
-                    <RequireAny>
-                        <RequireAll>
-                            Require expr %{REQUEST_URI} !~ /userinfo/
-                            Require method GET
-                        </RequireAll>
-                        Require valid-user
-                    </RequireAny>
-                </Directory>
-            EOFYAML
+            MANIFESTS="$(workspaces.source.path)/cts-repo/integration-tests/manifests"
+            kubectl create configmap cts-config \
+              --from-file=config.py="${MANIFESTS}/config.py" \
+              --from-file=httpd.conf="${MANIFESTS}/httpd.conf" \
+              --dry-run=client -o yaml | kubectl apply -f -
 
             # Deploy CTS
-            kubectl apply -f - <<EOF
-            apiVersion: v1
-            kind: Service
-            metadata:
-              name: cts
-              labels:
-                app: cts
-            spec:
-              ports:
-              - port: 8080
-                targetPort: 8080
-                name: http
-              selector:
-                app: cts
-            ---
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: cts
-              labels:
-                app: cts
-            spec:
-              replicas: 1
-              selector:
-                matchLabels:
-                  app: cts
-              template:
-                metadata:
-                  labels:
-                    app: cts
-                spec:
-                  initContainers:
-                  - name: run-migrations
-                    image: $IMAGE
-                    command:
-                    - /bin/bash
-                    - -c
-                    - |
-                      set -e
-                      echo "Running database migrations..."
-                      cd /src
-                      cts-manager db upgrade
-                      echo "Migrations completed successfully"
-                    volumeMounts:
-                    - name: cts-config
-                      mountPath: /etc/cts
-                      readOnly: true
-                  containers:
-                  - name: cts
-                    image: $IMAGE
-                    command:
-                    - /bin/bash
-                    - -c
-                    - |
-                      set -e
-                      exec httpd -DFOREGROUND -f /etc/cts/httpd.conf
-                    ports:
-                    - containerPort: 8080
-                    env:
-                    - name: REQUESTS_CA_BUNDLE
-                      value: /etc/dex-ca/ca.crt
-                    resources:
-                      requests:
-                        memory: "256Mi"
-                        cpu: "200m"
-                      limits:
-                        memory: "512Mi"
-                        cpu: "1000m"
-                    readinessProbe:
-                      httpGet:
-                        path: /api/1/
-                        port: 8080
-                      initialDelaySeconds: 15
-                      periodSeconds: 5
-                      timeoutSeconds: 5
-                      failureThreshold: 12
-                    livenessProbe:
-                      httpGet:
-                        path: /api/1/
-                        port: 8080
-                      initialDelaySeconds: 30
-                      periodSeconds: 10
-                      timeoutSeconds: 5
-                    volumeMounts:
-                    - name: cts-config
-                      mountPath: /etc/cts
-                      readOnly: true
-                    - name: dex-ca
-                      mountPath: /etc/dex-ca
-                      readOnly: true
-                  volumes:
-                  - name: cts-config
-                    configMap:
-                      name: cts-config
-                  - name: dex-ca
-                    secret:
-                      secretName: dex-ca
-            EOF
+            sed "s|\${IMAGE}|${IMAGE}|g" \
+              "$(workspaces.source.path)/cts-repo/integration-tests/manifests/cts.yaml" \
+              > /tmp/cts-rendered.yaml
+            kubectl apply -f /tmp/cts-rendered.yaml
 
             echo "Waiting for CTS service to be ready..."
 
