@@ -314,7 +314,7 @@ tar -C "$REPO_ROOT" \
     | kube exec -i cts-test-runner -- tar -xf - -C /tmp/cts-repo --no-same-owner
 
 # Copy the Dex CA cert into the pod
-kubectl cp "$_TMPDIR/ca.crt" "$NAMESPACE/cts-test-runner:/tmp/dex-ca.crt"
+kube exec -i cts-test-runner -- tee /tmp/dex-ca.crt > /dev/null < "$_TMPDIR/ca.crt"
 
 echo ""
 echo "Installing test dependencies and running pytest..."
