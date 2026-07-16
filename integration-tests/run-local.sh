@@ -30,6 +30,12 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MANIFESTS="$REPO_ROOT/integration-tests/manifests"
 DATA="$REPO_ROOT/integration-tests/data"
 
+. "$REPO_ROOT/integration-tests/scripts/kubeconfig.sh"
+. "$REPO_ROOT/integration-tests/scripts/dex-tls.sh"
+. "$REPO_ROOT/integration-tests/scripts/deploy-manifests.sh"
+. "$REPO_ROOT/integration-tests/scripts/deploy-cts.sh"
+. "$REPO_ROOT/integration-tests/scripts/pytest-cmd.sh"
+
 KIND_CLUSTER="${KIND_CLUSTER:-cts-integration}"
 NAMESPACE="cts-test-$(date +%s)"
 SKIP_BUILD=false
@@ -153,23 +159,13 @@ kube() { kubectl -n "$NAMESPACE" "$@"; }
 # Deploy PostgreSQL
 # ---------------------------------------------------------------------------
 echo ""
-echo "=========================================="
-echo "Deploying PostgreSQL"
-echo "=========================================="
-kube apply -f "$MANIFESTS/postgres.yaml"
+deploy_postgres "$MANIFESTS" "kubectl -n $NAMESPACE"
 
 # ---------------------------------------------------------------------------
 # Deploy OpenLDAP
 # ---------------------------------------------------------------------------
 echo ""
-echo "=========================================="
-echo "Deploying OpenLDAP (LDAP server)"
-echo "=========================================="
-kube create configmap ldap-data \
-    --from-file=groups.ldif="$DATA/groups.ldif"
-
-sed "s|\${LDAP_IMAGE}|${LDAP_IMAGE}|g" "$MANIFESTS/openldap.yaml" \
-    | kube apply -f -
+deploy_openldap "$MANIFESTS" "$LDAP_IMAGE" "$DATA" "kubectl -n $NAMESPACE"
 
 # ---------------------------------------------------------------------------
 # Deploy Dex (OIDC provider) with self-signed TLS
@@ -179,85 +175,22 @@ echo "=========================================="
 echo "Generating Dex TLS certificates"
 echo "=========================================="
 _TMPDIR=$(mktemp -d)
+generate_dex_tls "$_TMPDIR" "kubectl -n $NAMESPACE"
 
-openssl genrsa -out "$_TMPDIR/ca.key" 4096 2>/dev/null
-openssl req -x509 -new -nodes -key "$_TMPDIR/ca.key" \
-    -sha256 -days 365 -subj "/CN=dex-test-ca" \
-    -out "$_TMPDIR/ca.crt" 2>/dev/null
-
-openssl genrsa -out "$_TMPDIR/dex.key" 4096 2>/dev/null
-openssl req -new -key "$_TMPDIR/dex.key" \
-    -subj "/CN=dex" \
-    -out "$_TMPDIR/dex.csr" 2>/dev/null
-
-cat > "$_TMPDIR/dex.ext" <<'EOF'
-[SAN]
-subjectAltName=DNS:dex
-EOF
-openssl x509 -req -in "$_TMPDIR/dex.csr" \
-    -CA "$_TMPDIR/ca.crt" -CAkey "$_TMPDIR/ca.key" -CAcreateserial \
-    -out "$_TMPDIR/dex.crt" -days 365 -sha256 \
-    -extfile "$_TMPDIR/dex.ext" -extensions SAN 2>/dev/null
-
-kube create secret generic dex-tls \
-    --from-file=tls.crt="$_TMPDIR/dex.crt" \
-    --from-file=tls.key="$_TMPDIR/dex.key"
-
-kube create secret generic dex-ca \
-    --from-file=ca.crt="$_TMPDIR/ca.crt"
-
-echo "Deploying Dex..."
-kube apply -f "$MANIFESTS/dex-config.yaml"
-kube apply -f "$MANIFESTS/dex.yaml"
+echo ""
+deploy_dex_manifests "$MANIFESTS" "kubectl -n $NAMESPACE"
 
 # ---------------------------------------------------------------------------
 # Deploy Kafka
 # ---------------------------------------------------------------------------
 echo ""
-echo "=========================================="
-echo "Deploying Kafka"
-echo "=========================================="
-kube apply -f "$MANIFESTS/kafka.yaml"
-
-# ---------------------------------------------------------------------------
-# Wait for infrastructure services
-# ---------------------------------------------------------------------------
-echo ""
-echo "=========================================="
-echo "Waiting for infrastructure services..."
-echo "=========================================="
-kube wait --for=condition=available --timeout=300s \
-    deployment/cts-db \
-    deployment/openldap \
-    deployment/dex \
-    deployment/kafka
+deploy_kafka "$MANIFESTS" "kubectl -n $NAMESPACE"
 
 # ---------------------------------------------------------------------------
 # Deploy CTS
 # ---------------------------------------------------------------------------
 echo ""
-echo "=========================================="
-echo "Deploying CTS"
-echo "=========================================="
-kube create configmap cts-config \
-    --from-file=config.py="$MANIFESTS/config.py" \
-    --from-file=httpd.conf="$MANIFESTS/httpd.conf"
-
-sed "s|\${IMAGE}|${CTS_IMAGE}|g" "$MANIFESTS/cts.yaml" \
-    | kube apply -f -
-
-echo "Waiting for CTS to be ready (includes DB migration init container)..."
-if ! kube wait --for=condition=available --timeout=300s deployment/cts; then
-    echo ""
-    echo "CTS deployment failed! Debug info:"
-    kube describe deployment cts
-    kube describe pod -l app=cts
-    echo "--- CTS logs ---"
-    kube logs -l app=cts --all-containers --tail=100 || true
-    echo "--- Events ---"
-    kube get events --sort-by='.lastTimestamp' | tail -30
-    exit 1
-fi
+deploy_cts "$MANIFESTS" "$CTS_IMAGE" "kubectl -n $NAMESPACE"
 echo "CTS is ready."
 
 if [ "$NO_TESTS" = true ]; then
@@ -331,13 +264,8 @@ kube exec cts-test-runner -- bash -c "
 
     echo ''
     echo 'Running integration tests...'
-    cd /tmp/cts-repo
-    REQUESTS_CA_BUNDLE=/tmp/dex-ca.crt \
-    CTS_URL=http://cts:8080 \
-    AUTH_BACKEND=oidc_or_kerberos \
-    DEX_URL=https://dex:5556 \
-    KAFKA_URL=kafka:9092 \
-        python3 -m pytest tests/test_integration_api.py -v -s -o addopts=
+    $(declare -f run_pytest)
+    run_pytest /tmp/cts-repo /tmp/dex-ca.crt
 "
 TEST_RESULT=$?
 set -e
