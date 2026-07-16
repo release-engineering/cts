@@ -304,7 +304,9 @@ kube wait --for=condition=Ready pod/cts-test-runner --timeout=120s
 # Copy the repository into the pod (excluding bulky build artifacts)
 echo "Copying repository into test runner pod..."
 kube exec cts-test-runner -- mkdir -p /tmp/cts-repo
+# Use UID 0 and do not preserve host ownership for Podman
 tar -C "$REPO_ROOT" \
+--owner=0 --group=0 \
     --exclude=.git --exclude=.tox --exclude=__pycache__ \
     --exclude='*.egg-info' --exclude=.venv --exclude=venv \
     --exclude=docs/_build --exclude=.pytest_cache \
