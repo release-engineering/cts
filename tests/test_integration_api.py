@@ -145,7 +145,6 @@ def http_client():
     if not base_url:
         pytest.skip("Must set CTS_URL environment variable")
 
-    print(f"\nConnecting to CTS at: {base_url}")
     return HTTPClient(base_url=base_url)
 
 
@@ -392,7 +391,6 @@ def test_about_endpoint(http_client):
     assert status == 200
     assert isinstance(data, dict)
     assert "version" in data
-    print(f"  CTS version: {data['version']}")
 
 
 def test_composes_list(http_client):
@@ -401,7 +399,6 @@ def test_composes_list(http_client):
     assert status == 200
     assert isinstance(data, dict)
     assert "items" in data
-    print(f"  Found {len(data['items'])} composes")
 
 
 def test_composes_pagination(cts_client):
@@ -416,8 +413,6 @@ def test_composes_pagination(cts_client):
         )
         compose_ids.append(response["payload"]["compose"]["id"])
 
-    print(f"  Imported {len(compose_ids)} composes for pagination test")
-
     # Test page 1 with per_page=2
     status, data = cts_client.http.get("/api/1/composes/?page=1&per_page=2")
     assert status == 200
@@ -430,7 +425,6 @@ def test_composes_pagination(cts_client):
     assert data["meta"]["per_page"] == 2
     assert data["meta"]["page"] == 1
     total = data["meta"]["total"]
-    print(f"  Page 1 (per_page=2): {len(data['items'])} items, total: {total}")
 
     # Test page 2 with per_page=2 - should have 1 item (we imported 3 total)
     status, data = cts_client.http.get("/api/1/composes/?page=2&per_page=2")
@@ -440,8 +434,6 @@ def test_composes_pagination(cts_client):
         len(data["items"]) >= 1
     ), f"Expected at least 1 item on page 2, got {len(data['items'])}"
     assert data["meta"]["page"] == 2
-    print(f"  Page 2 (per_page=2): {len(data['items'])} items")
-    print("  ✓ Pagination working correctly with per_page=2")
 
 
 def test_openapi_spec(http_client):
@@ -450,7 +442,6 @@ def test_openapi_spec(http_client):
     assert status == 200
     assert isinstance(data, dict)
     assert "paths" in data
-    print(f"  API has {len(data['paths'])} endpoints")
 
 
 def test_tags_endpoint(http_client):
@@ -478,45 +469,34 @@ def test_workflow_tag_creation(cts_client):
         "https://example.com/docs/integration-test",
     )
     tag_id = data["id"]
-    print(f"  1. Created tag: {data['name']} (ID: {tag_id})")
 
     # Verify initial state - no taggers/untaggers
     assert data["taggers"] == []
     assert data["untaggers"] == []
-    print(f"  2. Initial taggers: {data['taggers']}, untaggers: {data['untaggers']}")
 
     # Step 2: Add a tagger
     data = cts_client.add_tagger(tag_id, "test-user")
-    print(f"  3. Added tagger 'test-user': taggers={data['taggers']}")
 
     # Step 3: Add an untagger
     data = cts_client.add_untagger(tag_id, "other-user")
     assert "test-user" in data["taggers"]
-    print(f"  4. Added untagger 'other-user': untaggers={data['untaggers']}")
 
     # Step 4: Add another tagger
     data = cts_client.add_tagger(tag_id, "another-user")
     assert set(data["taggers"]) == {"test-user", "another-user"}
-    print(f"  5. Added tagger 'another-user': taggers={data['taggers']}")
 
     # Step 5: Remove a tagger
     data = cts_client.remove_tagger(tag_id, "test-user")
     assert "another-user" in data["taggers"]
-    print(f"  6. Removed tagger 'test-user': taggers={data['taggers']}")
 
     # Step 6: Remove the untagger
     data = cts_client.remove_untagger(tag_id, "other-user")
-    print(f"  7. Removed untagger 'other-user': untaggers={data['untaggers']}")
 
     # Step 7: Verify final state
     status, final_data = cts_client.http.get(f"/api/1/tags/{tag_id}")
     assert status == 200
     assert final_data["taggers"] == ["another-user"]
     assert final_data["untaggers"] == []
-    print(
-        f"  8. Final state - taggers: {final_data['taggers']}, untaggers: {final_data['untaggers']}"
-    )
-    print("  ✓ Tag creation and tagger/untagger management completed successfully")
 
 
 def test_workflow_compose_import(cts_client):
@@ -527,7 +507,6 @@ def test_workflow_compose_import(cts_client):
         "20250101",
     )
     compose_id = data["payload"]["compose"]["id"]
-    print(f"  Imported compose: {compose_id}")
 
 
 def test_workflow_respin_increment(cts_client):
@@ -540,7 +519,6 @@ def test_workflow_respin_increment(cts_client):
     )
     compose_id1 = response1["payload"]["compose"]["id"]
     respin1 = response1["payload"]["compose"]["respin"]
-    print(f"  1. First compose: {compose_id1} (respin: {respin1})")
 
     # Import second compose with same release/date - respin should auto-increment
     response2 = cts_client.import_compose(
@@ -550,7 +528,6 @@ def test_workflow_respin_increment(cts_client):
     )
     compose_id2 = response2["payload"]["compose"]["id"]
     respin2 = response2["payload"]["compose"]["respin"]
-    print(f"  2. Second compose: {compose_id2} (respin: {respin2})")
 
     # Import third compose - respin should increment again
     response3 = cts_client.import_compose(
@@ -560,7 +537,6 @@ def test_workflow_respin_increment(cts_client):
     )
     compose_id3 = response3["payload"]["compose"]["id"]
     respin3 = response3["payload"]["compose"]["respin"]
-    print(f"  3. Third compose: {compose_id3} (respin: {respin3})")
 
     # Verify respin numbers are incremented
     assert (
@@ -575,8 +551,6 @@ def test_workflow_respin_increment(cts_client):
     assert f".t.{respin2}" in compose_id2
     assert f".t.{respin3}" in compose_id3
 
-    print(f"  ✓ Respin auto-increment verified: {respin1} → {respin2} → {respin3}")
-
 
 def test_workflow_full_lifecycle(cts_client):
     """Test complete workflow: create tag, import compose, tag it, untag it"""
@@ -588,7 +562,6 @@ def test_workflow_full_lifecycle(cts_client):
     )
     tag_id = tag_response["id"]
     tag_name = tag_response["name"]
-    print(f"  1. Created tag: {tag_name} (ID: {tag_id})")
 
     # Step 2: Import a compose
     compose_response = cts_client.import_compose(
@@ -597,35 +570,28 @@ def test_workflow_full_lifecycle(cts_client):
         "20250101",
     )
     compose_id = compose_response["payload"]["compose"]["id"]
-    print(f"  2. Imported compose: {compose_id}")
 
     # Verify compose has no tags initially
     status, compose_data = cts_client.http.get(f"/api/1/composes/{compose_id}")
     assert status == 200
     assert "tags" in compose_data
     initial_tags = compose_data.get("tags", [])
-    print(f"  3. Initial tags: {initial_tags}")
 
     # Step 3: Tag the compose
     tag_result = cts_client.tag_compose(compose_id, tag_name)
-    print(f"  4. Tagged compose with '{tag_name}': {tag_result.get('tags', [])}")
 
     # Step 4: Verify tag was applied
     status, compose_data = cts_client.http.get(f"/api/1/composes/{compose_id}")
     assert status == 200
     assert tag_name in compose_data.get("tags", [])
-    print(f"  5. Verified tags: {compose_data.get('tags', [])}")
 
     # Step 5: Untag the compose
     untag_result = cts_client.untag_compose(compose_id, tag_name)
-    print(f"  6. Untagged compose: {untag_result.get('tags', [])}")
 
     # Step 6: Verify tag was removed
     status, compose_data = cts_client.http.get(f"/api/1/composes/{compose_id}")
     assert status == 200
     assert tag_name not in compose_data.get("tags", [])
-    print(f"  7. Final tags: {compose_data.get('tags', [])}")
-    print("  ✓ Full workflow completed successfully")
 
 
 # OIDC authentication tests
