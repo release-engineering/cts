@@ -204,35 +204,15 @@ spec:
             #!/usr/bin/env bash
             set -euo pipefail
 
-            KUBECONFIG=/tmp/kubeconfig
-            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-            export KUBECONFIG
+            SCRIPTS="$(workspaces.source.path)/cts-repo/integration-tests/scripts"
+            . "$SCRIPTS/kubeconfig.sh"
+            . "$SCRIPTS/deploy-manifests.sh"
 
-            echo "=========================================="
-            echo "Deploying LDAP Server (pre-built image)"
-            echo "=========================================="
+            setup_kubeconfig "$(params.kubeconfig-secret)"
 
-            LDAP_IMAGE="$(params.ldap-server-image)"
-            echo "Using LDAP server image: $LDAP_IMAGE"
-
-            echo "Creating ldap-data ConfigMap from cloned repository..."
-            kubectl create configmap ldap-data \
-              --from-file=groups.ldif="$(workspaces.source.path)/cts-repo/integration-tests/data/groups.ldif"
-
-            sed "s|\${LDAP_IMAGE}|${LDAP_IMAGE}|g" \
-              "$(workspaces.source.path)/cts-repo/integration-tests/manifests/openldap.yaml" \
-              > /tmp/openldap-rendered.yaml
-            kubectl apply -f /tmp/openldap-rendered.yaml
-
-            echo "Waiting for LDAP server to be ready..."
-            if ! kubectl wait --for=condition=available --timeout=180s deployment/openldap; then
-              echo "LDAP deployment failed! Debug info:"
-              kubectl describe deployment openldap
-              kubectl describe pod -l app=openldap
-              kubectl logs -l app=openldap --tail=50 || echo "No logs available"
-              exit 1
-            fi
-            echo "✓ LDAP server is ready"
+            MANIFESTS="$(workspaces.source.path)/cts-repo/integration-tests/manifests"
+            DATA="$(workspaces.source.path)/cts-repo/integration-tests/data"
+            deploy_openldap "$MANIFESTS" "$(params.ldap-server-image)" "$DATA"
       params:
       - name: kubeconfig-secret
         value: $(tasks.provision-environment.results.secretRef)
@@ -264,69 +244,24 @@ spec:
             #!/usr/bin/env bash
             set -euo pipefail
 
-            KUBECONFIG=/tmp/kubeconfig
-            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-            export KUBECONFIG
+            SCRIPTS="$(workspaces.source.path)/cts-repo/integration-tests/scripts"
+            . "$SCRIPTS/kubeconfig.sh"
+            . "$SCRIPTS/dex-tls.sh"
+            . "$SCRIPTS/deploy-manifests.sh"
+
+            setup_kubeconfig "$(params.kubeconfig-secret)"
 
             echo "=========================================="
             echo "Generating Dex TLS certificate"
             echo "=========================================="
 
-            # Generate a self-signed CA and Dex server certificate (SAN: DNS:dex)
-            # so that OIDCOAuthVerifyJwksUri can use https://dex:5556/keys
             TMPDIR=$(mktemp -d)
-
-            # Generate CA key and cert
-            openssl genrsa -out "$TMPDIR/ca.key" 4096 2>/dev/null
-            openssl req -x509 -new -nodes -key "$TMPDIR/ca.key" \
-              -sha256 -days 365 \
-              -subj "/CN=dex-test-ca" \
-              -out "$TMPDIR/ca.crt" 2>/dev/null
-
-            # Generate Dex server key and CSR
-            openssl genrsa -out "$TMPDIR/dex.key" 4096 2>/dev/null
-            openssl req -new -key "$TMPDIR/dex.key" \
-              -subj "/CN=dex" \
-              -out "$TMPDIR/dex.csr" 2>/dev/null
-
-            # Sign the Dex cert with the CA, adding SAN for DNS:dex
-            cat > "$TMPDIR/dex.ext" <<'EXTEOF'
-            [SAN]
-            subjectAltName=DNS:dex
-            EXTEOF
-            openssl x509 -req -in "$TMPDIR/dex.csr" \
-              -CA "$TMPDIR/ca.crt" -CAkey "$TMPDIR/ca.key" -CAcreateserial \
-              -out "$TMPDIR/dex.crt" -days 365 -sha256 \
-              -extfile "$TMPDIR/dex.ext" -extensions SAN 2>/dev/null
-
-            # Store CA cert and Dex TLS cert/key in Kubernetes Secrets
-            kubectl create secret generic dex-tls \
-              --from-file=tls.crt="$TMPDIR/dex.crt" \
-              --from-file=tls.key="$TMPDIR/dex.key"
-
-            kubectl create secret generic dex-ca \
-              --from-file=ca.crt="$TMPDIR/ca.crt"
-
+            generate_dex_tls "$TMPDIR"
             rm -rf "$TMPDIR"
             echo "✓ Dex TLS certificate generated"
 
-            echo "=========================================="
-            echo "Deploying Dex OIDC Provider"
-            echo "=========================================="
-
-            kubectl apply -f "$(workspaces.source.path)/cts-repo/integration-tests/manifests/dex-config.yaml"
-
-            kubectl apply -f "$(workspaces.source.path)/cts-repo/integration-tests/manifests/dex.yaml"
-
-            echo "Waiting for Dex to be ready..."
-            if ! kubectl wait --for=condition=available --timeout=180s deployment/dex; then
-              echo "Dex deployment failed! Debug info:"
-              kubectl describe deployment dex
-              kubectl describe pod -l app=dex
-              kubectl logs -l app=dex --tail=50 || echo "No logs available"
-              exit 1
-            fi
-            echo "✓ Dex is ready"
+            MANIFESTS="$(workspaces.source.path)/cts-repo/integration-tests/manifests"
+            deploy_dex_manifests "$MANIFESTS"
       params:
       - name: kubeconfig-secret
         value: $(tasks.provision-environment.results.secretRef)
@@ -351,25 +286,14 @@ spec:
             #!/usr/bin/env bash
             set -euo pipefail
 
-            KUBECONFIG=/tmp/kubeconfig
-            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-            export KUBECONFIG
+            SCRIPTS="$(workspaces.source.path)/cts-repo/integration-tests/scripts"
+            . "$SCRIPTS/kubeconfig.sh"
+            . "$SCRIPTS/deploy-manifests.sh"
 
-            echo "=========================================="
-            echo "Deploying Kafka (Apache KRaft single-node)"
-            echo "=========================================="
+            setup_kubeconfig "$(params.kubeconfig-secret)"
 
-            kubectl apply -f "$(workspaces.source.path)/cts-repo/integration-tests/manifests/kafka.yaml"
-
-            echo "Waiting for Kafka to be ready..."
-            if ! kubectl wait --for=condition=available --timeout=300s deployment/kafka; then
-              echo "Kafka deployment failed! Debug info:"
-              kubectl describe deployment kafka
-              kubectl describe pod -l app=kafka
-              kubectl logs -l app=kafka --tail=50 || echo "No logs available"
-              exit 1
-            fi
-            echo "✓ Kafka is ready"
+            MANIFESTS="$(workspaces.source.path)/cts-repo/integration-tests/manifests"
+            deploy_kafka "$MANIFESTS"
       params:
       - name: kubeconfig-secret
         value: $(tasks.provision-environment.results.secretRef)
@@ -399,56 +323,14 @@ spec:
             #!/usr/bin/env bash
             set -euo pipefail
 
-            # Get kubeconfig from secret
-            KUBECONFIG=/tmp/kubeconfig
-            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-            export KUBECONFIG
+            SCRIPTS="$(workspaces.source.path)/cts-repo/integration-tests/scripts"
+            . "$SCRIPTS/kubeconfig.sh"
+            . "$SCRIPTS/deploy-manifests.sh"
 
-            echo "=========================================="
-            echo "Deploying PostgreSQL Database"
-            echo "=========================================="
+            setup_kubeconfig "$(params.kubeconfig-secret)"
 
-            # Deploy PostgreSQL
-            kubectl apply -f "$(workspaces.source.path)/cts-repo/integration-tests/manifests/postgres.yaml"
-
-            echo "Waiting for database to be ready..."
-
-            # Check pod status first
-            echo ""
-            echo "Pod status:"
-            kubectl get pods -l app=cts-db
-
-            echo ""
-            echo "Deployment status:"
-            kubectl get deployment cts-db
-
-            # Wait with more detailed output on failure
-            if ! kubectl wait --for=condition=available --timeout=180s deployment/cts-db; then
-              echo ""
-              echo "=========================================="
-              echo "Database deployment failed! Debug info:"
-              echo "=========================================="
-
-              echo ""
-              echo "Deployment details:"
-              kubectl describe deployment cts-db
-
-              echo ""
-              echo "Pod details:"
-              kubectl describe pod -l app=cts-db
-
-              echo ""
-              echo "Pod logs (if available):"
-              kubectl logs -l app=cts-db --tail=100 || echo "No logs available"
-
-              echo ""
-              echo "Events:"
-              kubectl get events --sort-by='.lastTimestamp'
-
-              exit 1
-            fi
-
-            echo "✓ Database is ready"
+            MANIFESTS="$(workspaces.source.path)/cts-repo/integration-tests/manifests"
+            deploy_postgres "$MANIFESTS"
       params:
       - name: kubeconfig-secret
         value: $(tasks.provision-environment.results.secretRef)
@@ -482,74 +364,14 @@ spec:
             #!/usr/bin/env bash
             set -euo pipefail
 
-            # Get kubeconfig from secret
-            KUBECONFIG=/tmp/kubeconfig
-            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-            export KUBECONFIG
+            SCRIPTS="$(workspaces.source.path)/cts-repo/integration-tests/scripts"
+            . "$SCRIPTS/kubeconfig.sh"
+            . "$SCRIPTS/deploy-cts.sh"
 
-            IMAGE="$(params.image-url)"
+            setup_kubeconfig "$(params.kubeconfig-secret)"
 
-            echo "=========================================="
-            echo "Deploying CTS Service"
-            echo "=========================================="
-            echo "Image: $IMAGE"
-
-            # Create ConfigMap with production configuration and httpd config for CTS
             MANIFESTS="$(workspaces.source.path)/cts-repo/integration-tests/manifests"
-            kubectl create configmap cts-config \
-              --from-file=config.py="${MANIFESTS}/config.py" \
-              --from-file=httpd.conf="${MANIFESTS}/httpd.conf" \
-              --dry-run=client -o yaml | kubectl apply -f -
-
-            # Deploy CTS
-            sed "s|\${IMAGE}|${IMAGE}|g" \
-              "$(workspaces.source.path)/cts-repo/integration-tests/manifests/cts.yaml" \
-              > /tmp/cts-rendered.yaml
-            kubectl apply -f /tmp/cts-rendered.yaml
-
-            echo "Waiting for CTS service to be ready..."
-
-            # Check pod status first
-            echo ""
-            echo "Pod status:"
-            kubectl get pods -l app=cts
-
-            echo ""
-            echo "Deployment status:"
-            kubectl get deployment cts
-
-            # Wait with more detailed output on failure
-            if ! kubectl wait --for=condition=available --timeout=300s deployment/cts; then
-              echo ""
-              echo "=========================================="
-              echo "CTS deployment failed! Debug info:"
-              echo "=========================================="
-
-              echo ""
-              echo "Deployment details:"
-              kubectl describe deployment cts
-
-              echo ""
-              echo "Pod details:"
-              kubectl describe pod -l app=cts
-
-              echo ""
-              echo "CTS Pod logs (if available):"
-              kubectl logs -l app=cts --tail=100 || echo "No logs available"
-
-              echo ""
-              echo "Database pod status (for reference):"
-              kubectl get pod -l app=cts-db
-
-              echo ""
-              echo "Events:"
-              kubectl get events --sort-by='.lastTimestamp' | tail -30
-
-              exit 1
-            fi
-
-            echo ""
-            echo "✓ CTS service is ready"
+            deploy_cts "$MANIFESTS" "$(params.image-url)"
       params:
       - name: kubeconfig-secret
         value: $(tasks.provision-environment.results.secretRef)
@@ -583,14 +405,15 @@ spec:
             #!/usr/bin/env bash
             set -euo pipefail
 
+            SCRIPTS="$(workspaces.source.path)/cts-repo/integration-tests/scripts"
+            . "$SCRIPTS/kubeconfig.sh"
+            . "$SCRIPTS/pytest-cmd.sh"
+
             echo "=========================================="
             echo "Running Integration Tests"
             echo "=========================================="
 
-            # Get kubeconfig
-            KUBECONFIG=/tmp/kubeconfig
-            kubectl get secret $(params.kubeconfig-secret) -o jsonpath='{.data.kubeconfig}' | base64 -d > $KUBECONFIG
-            export KUBECONFIG
+            setup_kubeconfig "$(params.kubeconfig-secret)"
 
             # Get the namespace
             NAMESPACE=$(kubectl config view --minify -o jsonpath='{..namespace}')
@@ -638,8 +461,9 @@ spec:
 
               echo ''
               echo 'Running pytest...'
-              cd /tmp/cts-repo
-              PYTHONPATH=/tmp/test-deps REQUESTS_CA_BUNDLE=/tmp/dex-ca.crt CTS_URL=http://cts:8080 AUTH_BACKEND=oidc_or_kerberos DEX_URL=https://dex:5556 KAFKA_URL=kafka:9092 python3 -m pytest tests/test_integration_api.py -v -o addopts=
+              export PYTHONPATH=/tmp/test-deps
+              $(declare -f run_pytest)
+              run_pytest /tmp/cts-repo /tmp/dex-ca.crt
             "
             TEST_RESULT=$?
             set -e
