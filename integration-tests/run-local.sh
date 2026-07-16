@@ -311,7 +311,7 @@ tar -C "$REPO_ROOT" \
     --exclude='*.egg-info' --exclude=.venv --exclude=venv \
     --exclude=docs/_build --exclude=.pytest_cache \
     -cf - . \
-    | kube exec -i cts-test-runner -- tar -xf - -C /tmp/cts-repo
+    | kube exec -i cts-test-runner -- tar -xf - -C /tmp/cts-repo --no-same-owner
 
 # Copy the Dex CA cert into the pod
 kubectl cp "$_TMPDIR/ca.crt" "$NAMESPACE/cts-test-runner:/tmp/dex-ca.crt"
