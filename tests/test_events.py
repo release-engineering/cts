@@ -98,11 +98,11 @@ class TestKafkaSendMessageWhenComposeIsCreated(ModelsBaseTest):
 
     def setUp(self):
         super(TestKafkaSendMessageWhenComposeIsCreated, self).setUp()
-        cts.messaging._kafka_producer = None
+        cts.messaging._close_kafka_producer()
 
     def tearDown(self):
         super(TestKafkaSendMessageWhenComposeIsCreated, self).tearDown()
-        cts.messaging._kafka_producer = None
+        cts.messaging._close_kafka_producer()
 
     def setup_composes(self):
         User.create_user(username="odcs")
@@ -139,6 +139,7 @@ class TestKafkaSendMessageWhenComposeIsCreated(ModelsBaseTest):
                 },
             )
 
+            mock_producer.flush.assert_called_once()
             # Producer should not be closed on success (long-lived)
             mock_producer.close.assert_not_called()
 
@@ -146,21 +147,17 @@ class TestKafkaSendMessageWhenComposeIsCreated(ModelsBaseTest):
     @patch.object(conf, "messaging_kafka_username", new="test_user")
     @patch.object(conf, "messaging_kafka_password", new="test_password")
     @patch("kafka.KafkaProducer")
-    def test_kafka_producer_closed_on_exception(self, KafkaProducer):
-        """Test that producer is closed and recreated on failure"""
+    def test_kafka_producer_closed_on_delivery_failure(self, KafkaProducer):
+        """Test that producer is reset when flush() reports delivery failure."""
         mock_producer = KafkaProducer.return_value
-        mock_producer.send.side_effect = Exception("Send failed")
+        mock_producer.flush.side_effect = Exception("Delivery failed")
 
         msgs = [{"event": "test", "data": "test_data"}]
 
-        with patch("time.sleep"):
-            with self.assertRaises(Exception):
-                _kafka_send_msg(msgs)
+        with self.assertRaises(Exception):
+            _kafka_send_msg(msgs)
 
-        # Producer should be closed on each failed attempt and recreated
-        # Default is 3 retries + 1 initial = 4 attempts
-        self.assertEqual(mock_producer.close.call_count, 4)
-        # After all retries exhausted, producer should be reset to None
+        mock_producer.close.assert_called_once()
         self.assertIsNone(cts.messaging._kafka_producer)
 
     @patch.object(conf, "messaging_broker_urls", new=["localhost:9092"])
@@ -176,8 +173,21 @@ class TestKafkaSendMessageWhenComposeIsCreated(ModelsBaseTest):
 
         # Producer should only be created once
         KafkaProducer.assert_called_once()
-        # But send should be called twice
+        # But send and flush should be called twice
         self.assertEqual(mock_producer.send.call_count, 2)
+        self.assertEqual(mock_producer.flush.call_count, 2)
+
+    @patch.object(conf, "messaging_broker_urls", new=["localhost:9092"])
+    @patch.object(conf, "messaging_kafka_username", new="test_user")
+    @patch.object(conf, "messaging_kafka_password", new="test_password")
+    @patch.object(conf, "messaging_kafka_compression_type", new="none")
+    @patch("kafka.KafkaProducer")
+    def test_kafka_producer_normalizes_none_compression(self, KafkaProducer):
+        """Config value 'none' must become None for kafka-python."""
+        _kafka_send_msg([{"event": "compose-created", "compose": {}}])
+
+        call_args = KafkaProducer.call_args[1]
+        self.assertIsNone(call_args["compression_type"])
 
 
 @patch("cts.messaging.publish")
@@ -533,35 +543,25 @@ class TestRhmsgRetries(unittest.TestCase):
 
 
 @unittest.skipUnless(kafka, "kafka-python is required to run this test case.")
-class TestKafkaRetries(unittest.TestCase):
-    """Test Kafka-specific retry behavior"""
+class TestKafkaDelivery(unittest.TestCase):
+    """Test Kafka delivery confirmation via flush()."""
 
     def setUp(self):
-        cts.messaging._kafka_producer = None
+        cts.messaging._close_kafka_producer()
 
     def tearDown(self):
-        cts.messaging._kafka_producer = None
+        cts.messaging._close_kafka_producer()
 
     @patch.object(conf, "messaging_broker_urls", new=["localhost:9092"])
     @patch.object(conf, "messaging_kafka_username", new="test_user")
     @patch.object(conf, "messaging_kafka_password", new="test_password")
     @patch.object(conf, "messaging_topic_prefix", new="cts.")
-    def test_kafka_send_msg_retries_on_transient_failure(self):
-        """Test that _kafka_send_msg retries on transient failures"""
-        # Simulate send failure on first call, then success
-        send_count = [0]
-        mock_producer = Mock()
+    @patch("kafka.KafkaProducer")
+    def test_kafka_send_msg_flushes_after_send(self, KafkaProducer):
+        """Test that _kafka_send_msg waits for delivery via flush()."""
+        mock_producer = KafkaProducer.return_value
 
-        def send_side_effect(*args, **kwargs):
-            send_count[0] += 1
-            if send_count[0] == 1:
-                raise ConnectionError("Transient network error")
+        _kafka_send_msg([{"event": "test", "data": "test"}])
 
-        mock_producer.send.side_effect = send_side_effect
-
-        with patch("time.sleep"):
-            with patch("kafka.KafkaProducer", return_value=mock_producer):
-                _kafka_send_msg([{"event": "test", "data": "test"}])
-
-        # First send fails, producer is closed and reset, second send succeeds
-        self.assertEqual(send_count[0], 2)
+        mock_producer.send.assert_called_once()
+        mock_producer.flush.assert_called_once()

@@ -21,6 +21,7 @@
 #
 # Written by Chenxiong Qi <cqi@redhat.com>
 
+import atexit
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -95,6 +96,29 @@ def _retry_with_backoff(func, max_retries=3, initial_delay=1.0, backoff_multipli
 _kafka_producer = None
 
 
+def _normalize_kafka_compression(compression):
+    """Return a compression_type value accepted by kafka-python."""
+    # kafka-python uses Python None to mean "no compression"; the string
+    # "none" (which may come from a config file) is not accepted.
+    if compression and compression.lower() == "none":
+        return None
+    return compression
+
+
+def _close_kafka_producer(flush=False):
+    """Close the module-level Kafka producer, if any."""
+    global _kafka_producer
+    if _kafka_producer is None:
+        return
+    try:
+        if flush:
+            _kafka_producer.flush()
+        _kafka_producer.close()
+    except Exception:
+        pass
+    _kafka_producer = None
+
+
 def _get_kafka_producer():
     """Get or create a long-lived Kafka producer.
 
@@ -107,7 +131,9 @@ def _get_kafka_producer():
 
         _kafka_producer = KafkaProducer(
             bootstrap_servers=conf.messaging_broker_urls,
-            compression_type=conf.messaging_kafka_compression_type,
+            compression_type=_normalize_kafka_compression(
+                conf.messaging_kafka_compression_type
+            ),
             security_protocol=conf.messaging_kafka_security_protocol,
             sasl_mechanism=conf.messaging_kafka_sasl_mechanism,
             sasl_plain_username=conf.messaging_kafka_username,
@@ -117,37 +143,29 @@ def _get_kafka_producer():
     return _kafka_producer
 
 
-def _kafka_send_msg(msgs):
-    """Send messages to Kafka with retry logic.
+atexit.register(lambda: _close_kafka_producer(flush=True))
 
-    Uses a persistent producer that is reused across calls. On failure,
-    the producer is closed and recreated on the next retry attempt.
+
+def _kafka_send_msg(msgs):
+    """Send messages to Kafka.
+
+    Uses a persistent producer that is reused across calls. Retries are handled
+    by kafka-python; flush() waits for delivery (or final failure) so errors can
+    be logged by the caller.
 
     :param list[dict] msgs: List of messages to be sent.
-    :raises Exception: If Kafka operations fail after retries
+    :raises Exception: If messages cannot be delivered after kafka-python retries
     """
-
-    def _send():
-        global _kafka_producer
-        try:
-            producer = _get_kafka_producer()
-            for msg in msgs:
-                event = msg.get("event", "event")
-                topic = "%s%s" % (conf.messaging_topic_prefix, event)
-                producer.send(topic, msg)
-        except Exception as e:
-            log.error("Failed to send messages to Kafka: %s", str(e))
-            # Close and discard the broken producer so the next retry
-            # creates a fresh connection.
-            if _kafka_producer is not None:
-                try:
-                    _kafka_producer.close()
-                except Exception:
-                    pass
-                _kafka_producer = None
-            raise
-
-    _retry_with_backoff(_send)
+    try:
+        producer = _get_kafka_producer()
+        for msg in msgs:
+            event = msg.get("event", "event")
+            topic = "%s%s" % (conf.messaging_topic_prefix, event)
+            producer.send(topic, msg)
+        producer.flush()
+    except Exception:
+        _close_kafka_producer()
+        raise
 
 
 def _umb_send_msg(msgs):
