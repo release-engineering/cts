@@ -56,10 +56,38 @@ def _validate_kerberos_config():
             "check AUTH_LDAP_GROUPS in your config."
         )
 
+    bind_mechanism = conf.auth_ldap_bind_mechanism
+    if bind_mechanism == "simple":
+        if not conf.auth_ldap_bind_dn:
+            errors.append(
+                "LDAP simple bind requires AUTH_LDAP_BIND_DN to be configured."
+            )
+        if not conf.auth_ldap_bind_password:
+            errors.append(
+                "LDAP simple bind requires AUTH_LDAP_BIND_PASSWORD to be configured."
+            )
+
     if errors:
         for error in errors:
             log.exception(error)
         raise ValueError("Invalid configuration for kerberos authentication.")
+
+
+def _configure_ldap_client(client):
+    client.set_option(ldap.OPT_REFERRALS, 0)
+    client.protocol_version = ldap.VERSION3
+
+
+def _bind_ldap_client(client):
+    mechanism = conf.auth_ldap_bind_mechanism
+    if mechanism == "none":
+        return
+    if mechanism == "gssapi":
+        client.sasl_gssapi_bind_s()
+        return
+    if mechanism == "simple":
+        client.simple_bind_s(conf.auth_ldap_bind_dn, conf.auth_ldap_bind_password)
+        return
 
 
 @commit_on_success
@@ -125,6 +153,13 @@ def load_krb_or_ssl_user_from_request(request):
         return load_ssl_user_from_request(request)
 
 
+def _ldap_error_description(error):
+    """Return a log-safe description from a python-ldap LDAPError."""
+    if error.args and isinstance(error.args[0], dict):
+        return error.args[0].get("desc", str(error))
+    return str(error)
+
+
 def query_ldap_groups(uid):
     """Query user's ldap groups.
 
@@ -134,8 +169,10 @@ def query_ldap_groups(uid):
     """
 
     client = ldap.initialize(conf.auth_ldap_server)
+    _configure_ldap_client(client)
     groups = []
     try:
+        _bind_ldap_client(client)
         for ldap_base, ldap_filter in conf.auth_ldap_groups:
             groups.extend(
                 client.search_s(
@@ -145,13 +182,18 @@ def query_ldap_groups(uid):
                     filterstr=ldap_filter.format(uid),
                 )
             )
-    except ldap.SERVER_DOWN as e:
+    except ldap.LDAPError as e:
         log.error(
             "Cannot query groups of %s from LDAP. Error: %s",
             uid,
-            e.args[0]["desc"],
+            _ldap_error_description(e),
         )
         return groups
+    finally:
+        try:
+            client.unbind_s()
+        except ldap.LDAPError:
+            pass
 
     group_names = [g.decode() for g in list(chain(*[info["cn"] for _, info in groups]))]
     return group_names
