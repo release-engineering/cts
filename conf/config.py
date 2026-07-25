@@ -38,6 +38,14 @@ class BaseConfiguration(object):
     # ]
     AUTH_LDAP_GROUPS = []
 
+    # Mechanism used to authenticate LDAP queries: gssapi, simple, or none.
+    # Production deployments should use gssapi with a service keytab.
+    AUTH_LDAP_BIND_MECHANISM = "gssapi"
+
+    # Credentials for AUTH_LDAP_BIND_MECHANISM = "simple".
+    AUTH_LDAP_BIND_DN = ""
+    AUTH_LDAP_BIND_PASSWORD = ""
+
     AUTH_OPENIDC_USERINFO_URI = "https://id.fedoraproject.org/openidc/UserInfo"
 
     # Scope requested from Fedora Infra for permission of submitting request to
@@ -110,6 +118,7 @@ class TestConfiguration(BaseConfiguration):
     AUTH_BACKEND = "noauth"
     AUTH_LDAP_SERVER = "ldap://ldap.example.com"
     AUTH_LDAP_GROUPS = [("ou=groups,dc=example,dc=com", "memberUid={}")]
+    AUTH_LDAP_BIND_MECHANISM = "none"
     MESSAGING_BACKEND = "rhmsg"
 
 

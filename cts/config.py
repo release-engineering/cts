@@ -141,6 +141,21 @@ class Config(object):
             "default": [],
             "desc": "List of pairs (search base, filter pattern) to query user's groups from LDAP server.",
         },
+        "auth_ldap_bind_mechanism": {
+            "type": str,
+            "default": "gssapi",
+            "desc": "LDAP bind mechanism: gssapi, simple, or none.",
+        },
+        "auth_ldap_bind_dn": {
+            "type": str,
+            "default": "",
+            "desc": "Bind DN for LDAP simple authentication.",
+        },
+        "auth_ldap_bind_password": {
+            "type": str,
+            "default": "",
+            "desc": "Bind password for LDAP simple authentication.",
+        },
         "messaging_backend": {
             "type": str,
             "default": "",
@@ -284,3 +299,12 @@ class Config(object):
     def _setifok_log_level(self, s):
         level = str(s).lower()
         self._log_level = logger.str_to_log_level(level)
+
+    def _setifok_auth_ldap_bind_mechanism(self, s):
+        mechanism = str(s).lower()
+        if mechanism not in ("gssapi", "simple", "none"):
+            raise ValueError(
+                "Unsupported LDAP bind mechanism %r, supported values: "
+                "gssapi, simple, none." % mechanism
+            )
+        self._auth_ldap_bind_mechanism = mechanism
