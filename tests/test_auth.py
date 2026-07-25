@@ -23,6 +23,7 @@
 
 
 import flask
+import ldap
 import unittest
 
 from unittest.mock import patch, Mock
@@ -349,6 +350,7 @@ class TestQueryLdapGroups(unittest.TestCase):
             ),
         ],
     )
+    @patch.object(conf, "auth_ldap_bind_mechanism", new="none")
     @patch("cts.auth.ldap.initialize")
     def test_get_groups(self, initialize):
         initialize.return_value.search_s.side_effect = [
@@ -372,6 +374,55 @@ class TestQueryLdapGroups(unittest.TestCase):
 
         groups = query_ldap_groups("me")
         self.assertEqual(sorted(["ctsdev", "devel", "ctsadmin"]), sorted(groups))
+        initialize.return_value.unbind_s.assert_called_once_with()
+
+    @patch.object(
+        conf,
+        "auth_ldap_groups",
+        new=[("ou=Groups,dc=example,dc=com", "memberUid={}")],
+    )
+    @patch.object(conf, "auth_ldap_bind_mechanism", new="gssapi")
+    @patch("cts.auth.ldap.initialize")
+    def test_get_groups_with_gssapi_bind(self, initialize):
+        initialize.return_value.search_s.return_value = [
+            ("cn=devel,ou=Groups,dc=example,dc=com", {"cn": [b"devel"]}),
+        ]
+
+        groups = query_ldap_groups("me")
+        self.assertEqual(["devel"], groups)
+        initialize.return_value.sasl_gssapi_bind_s.assert_called_once_with()
+
+    @patch.object(
+        conf,
+        "auth_ldap_groups",
+        new=[("ou=Groups,dc=example,dc=com", "memberUid={}")],
+    )
+    @patch.object(conf, "auth_ldap_bind_password", new="secret")
+    @patch.object(conf, "auth_ldap_bind_dn", new="cn=svc,dc=example,dc=com")
+    @patch.object(conf, "auth_ldap_bind_mechanism", new="simple")
+    @patch("cts.auth.ldap.initialize")
+    def test_get_groups_with_simple_bind(self, initialize):
+        initialize.return_value.search_s.return_value = [
+            ("cn=devel,ou=Groups,dc=example,dc=com", {"cn": [b"devel"]}),
+        ]
+
+        groups = query_ldap_groups("me")
+        self.assertEqual(["devel"], groups)
+        initialize.return_value.simple_bind_s.assert_called_once_with(
+            "cn=svc,dc=example,dc=com",
+            "secret",
+        )
+
+    @patch.object(conf, "auth_ldap_bind_mechanism", new="gssapi")
+    @patch("cts.auth.ldap.initialize")
+    def test_ldap_error_with_unexpected_args_is_logged(self, initialize):
+        initialize.return_value.sasl_gssapi_bind_s.side_effect = ldap.LDAPError(
+            "bind failed"
+        )
+
+        groups = query_ldap_groups("me")
+        self.assertEqual([], groups)
+        initialize.return_value.unbind_s.assert_called_once_with()
 
 
 class TestInitAuth(unittest.TestCase):
@@ -417,6 +468,14 @@ class TestInitAuth(unittest.TestCase):
 
     def test_init_auths_no_ldap_group_base(self):
         with patch.object(cts.auth.conf, "auth_ldap_groups", ""):
+            self.assertRaises(ValueError, init_auth, self.login_manager, "kerberos")
+
+    def test_init_auth_simple_bind_missing_credentials(self):
+        with (
+            patch.object(cts.auth.conf, "auth_ldap_bind_mechanism", "simple"),
+            patch.object(cts.auth.conf, "auth_ldap_bind_dn", ""),
+            patch.object(cts.auth.conf, "auth_ldap_bind_password", ""),
+        ):
             self.assertRaises(ValueError, init_auth, self.login_manager, "kerberos")
 
 
