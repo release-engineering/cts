@@ -119,6 +119,12 @@ def _close_kafka_producer(flush=False):
     _kafka_producer = None
 
 
+def _shutdown_messaging():
+    """Drain pending publishes, then close the long-lived Kafka producer."""
+    _executor.shutdown(wait=True, cancel_futures=False)
+    _close_kafka_producer(flush=True)
+
+
 def _get_kafka_producer():
     """Get or create a long-lived Kafka producer.
 
@@ -143,7 +149,7 @@ def _get_kafka_producer():
     return _kafka_producer
 
 
-atexit.register(lambda: _close_kafka_producer(flush=True))
+atexit.register(_shutdown_messaging)
 
 
 def _kafka_send_msg(msgs):
