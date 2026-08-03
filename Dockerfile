@@ -21,6 +21,7 @@ RUN dnf -y --setopt=install_weak_deps=False update \
         mod_auth_openidc \
         mod_ldap \
         mod_ssl \
+        cyrus-sasl-gssapi \
         python3-defusedxml \
         python3-flask \
         python3-flask-login \
