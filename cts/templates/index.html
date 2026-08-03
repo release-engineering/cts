@@ -21,6 +21,16 @@
         font-size: 20px;
       }
 
+      .version {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        font-family: "Red Hat Text";
+        font-size: 12px;
+        color: #6a6e73;
+        margin: 0;
+      }
+
       .button {
         display: inline-block;
         margin: 24px 0px 0px 0px; /*top, right, bottom, and left*/
@@ -71,6 +81,7 @@
     </style>
   </head>
   <body>
+    <p class="version">Version {{ version }}</p>
     <div class="center">
       <h1>Compose Tracking Service</h1>
       <p>
