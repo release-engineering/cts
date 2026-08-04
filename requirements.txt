@@ -1,5 +1,5 @@
 sqlalchemy<2.0  # For Flask 2.2.3
-Flask==2.2.3  # Pin version for Flask-Login
+Flask==2.3.3  # Pin version for Flask-Login
 Flask-Migrate
 Flask-SQLAlchemy<3.0  # For sqlalchemy and Flask
 Flask-Login==0.6.2
