@@ -25,12 +25,14 @@ import os
 import ssl
 
 import click
-import flask_migrate
-
 from flask.cli import FlaskGroup
 from werkzeug.serving import run_simple
 
-from cts import app, conf, db, models
+from cts import create_app, db, models
+
+# Bootstrap configuration for CLI option defaults without web auth/views.
+create_app(mode="minimal")
+from cts import conf  # noqa: E402
 
 
 def _establish_ssl_context():
@@ -58,13 +60,9 @@ def _establish_ssl_context():
     return ssl_ctx
 
 
-@click.group(cls=FlaskGroup, create_app=lambda *args, **kwargs: app)
+@click.group(cls=FlaskGroup, create_app=lambda: create_app(mode="minimal"))
 def cli():
     """Manage CTS application"""
-
-
-migrations_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "migrations")
-flask_migrate.Migrate(app, db, directory=migrations_dir)
 
 
 @cli.command()
@@ -112,6 +110,7 @@ def runssl(host=conf.host, port=conf.port, debug=conf.debug):
     """Runs the Flask app with the HTTPS settings configured in config.py"""
     logging.info("Starting CTS frontend")
 
+    app = create_app(mode="full")
     ssl_ctx = _establish_ssl_context()
     run_simple(host, port, app, use_debugger=debug, ssl_context=ssl_ctx)
 
@@ -162,6 +161,7 @@ def openapispec():
     """Dump OpenAPI specification"""
     import json
 
+    app = create_app(mode="full")
     print(json.dumps(app.openapispec.to_dict(), indent=2))
 
 

@@ -24,7 +24,7 @@
 import unittest
 from productmd import ComposeInfo
 
-from cts import db
+from cts import app, db
 from sqlalchemy import event
 from cts.events import cache_composes_if_state_changed
 from cts.events import start_to_publish_messages
@@ -69,6 +69,9 @@ class ModelsBaseTest(unittest.TestCase):
     disable_event_handlers = True
 
     def setUp(self):
+        self._app_context = app.app_context()
+        self._app_context.push()
+
         # Not all tests need handlers of event after_flush and after_commit.
         if event.contains(
             SignallingSession, "after_flush", cache_composes_if_state_changed
@@ -125,3 +128,5 @@ class ModelsBaseTest(unittest.TestCase):
         # to restore enviornment for each test method.
         event.listen(SignallingSession, "after_flush", cache_composes_if_state_changed)
         event.listen(SignallingSession, "after_commit", start_to_publish_messages)
+
+        self._app_context.pop()

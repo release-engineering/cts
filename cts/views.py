@@ -35,7 +35,7 @@ from marshmallow import Schema, fields
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from sqlalchemy.exc import IntegrityError
 
-from cts import app, conf, version, db
+from cts import conf, version, db
 from cts.errors import NotFound, Forbidden
 from cts.models import Compose, Tag
 from cts.api_utils import (
@@ -47,13 +47,6 @@ from cts.api_utils import (
 )
 from cts.auth import requires_role, require_scopes, require_oidc_scope, has_role
 from cts.metrics import registry
-
-app.openapispec = APISpec(
-    title="Compose Tracking Service (CTS)",
-    version="v1",
-    openapi_version="3.0.2",
-    plugins=[FlaskPlugin(), MarshmallowPlugin()],
-)
 
 
 class MetaSchema(Schema):
@@ -1197,7 +1190,7 @@ class APIDoc(View):
         return render_template("apidoc.html")
 
 
-def register_api_v1():
+def register_api_v1(app):
     """Registers version 1 of CTS API."""
     api_v1 = {
         "composes": {
@@ -1275,6 +1268,15 @@ def register_api_v1():
             app.openapispec.path(view=view_func)
 
 
-app.add_url_rule("/", view_func=Index.as_view("index"))
-app.add_url_rule("/api/1/", view_func=APIDoc.as_view("apidoc"))
-register_api_v1()
+def register_views(app):
+    """Register HTTP routes and OpenAPI metadata on the application."""
+    app.openapispec = APISpec(
+        title="Compose Tracking Service (CTS)",
+        version="v1",
+        openapi_version="3.0.2",
+        plugins=[FlaskPlugin(), MarshmallowPlugin()],
+    )
+
+    app.add_url_rule("/", view_func=Index.as_view("index"))
+    app.add_url_rule("/api/1/", view_func=APIDoc.as_view("apidoc"))
+    register_api_v1(app)

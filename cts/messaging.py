@@ -27,14 +27,18 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 
-from cts import conf
-
 log = getLogger(__name__)
 
 __all__ = ("publish",)
 
 # Thread pool for async message publishing (single worker to serialize message sending)
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cts-messaging")
+
+
+def _config():
+    import cts
+
+    return cts.conf
 
 
 def publish(msgs):
@@ -136,14 +140,14 @@ def _get_kafka_producer():
         from kafka import KafkaProducer
 
         _kafka_producer = KafkaProducer(
-            bootstrap_servers=conf.messaging_broker_urls,
+            bootstrap_servers=_config().messaging_broker_urls,
             compression_type=_normalize_kafka_compression(
-                conf.messaging_kafka_compression_type
+                _config().messaging_kafka_compression_type
             ),
-            security_protocol=conf.messaging_kafka_security_protocol,
-            sasl_mechanism=conf.messaging_kafka_sasl_mechanism,
-            sasl_plain_username=conf.messaging_kafka_username,
-            sasl_plain_password=conf.messaging_kafka_password,
+            security_protocol=_config().messaging_kafka_security_protocol,
+            sasl_mechanism=_config().messaging_kafka_sasl_mechanism,
+            sasl_plain_username=_config().messaging_kafka_username,
+            sasl_plain_password=_config().messaging_kafka_password,
             value_serializer=lambda v: json.dumps(v).encode("utf-8"),
         )
     return _kafka_producer
@@ -166,7 +170,7 @@ def _kafka_send_msg(msgs):
         producer = _get_kafka_producer()
         for msg in msgs:
             event = msg.get("event", "event")
-            topic = "%s%s" % (conf.messaging_topic_prefix, event)
+            topic = "%s%s" % (_config().messaging_topic_prefix, event)
             producer.send(topic, msg)
         producer.flush()
     except Exception:
@@ -183,15 +187,15 @@ def _umb_send_msg(msgs):
     def _send():
         """Inner function to send messages (will be retried on failure)"""
         config = {
-            "urls": conf.messaging_broker_urls,
-            "certificate": conf.messaging_cert_file,
-            "private_key": conf.messaging_key_file,
-            "trusted_certificates": conf.messaging_ca_cert,
+            "urls": _config().messaging_broker_urls,
+            "certificate": _config().messaging_cert_file,
+            "private_key": _config().messaging_key_file,
+            "trusted_certificates": _config().messaging_ca_cert,
         }
         with AMQProducer(**config) as producer:
             for msg in msgs:
                 event = msg.get("event", "event")
-                topic = "%s%s" % (conf.messaging_topic_prefix, event)
+                topic = "%s%s" % (_config().messaging_topic_prefix, event)
                 producer.through_topic(topic)
                 outgoing_msg = proton.Message()
                 outgoing_msg.body = json.dumps(msg)
@@ -202,6 +206,7 @@ def _umb_send_msg(msgs):
 
 
 def _get_messaging_backend():
+    conf = _config()
     if conf.messaging_backend == "kafka":
         return _kafka_send_msg
     elif conf.messaging_backend == "rhmsg":

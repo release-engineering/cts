@@ -167,6 +167,7 @@ def query_ldap_groups(uid):
     :return: List of group names.
     :rtype: List[str].
     """
+    _validate_kerberos_config()
 
     client = ldap.initialize(conf.auth_ldap_server)
     _configure_ldap_client(client)
@@ -328,7 +329,6 @@ def init_auth(login_manager, backend):
         load_anonymous_user = login_manager.request_loader(load_anonymous_user)
         return
     if backend == "kerberos":
-        _validate_kerberos_config()
         global load_krb_user_from_request
         load_krb_user_from_request = login_manager.request_loader(
             load_krb_user_from_request
@@ -337,13 +337,11 @@ def init_auth(login_manager, backend):
         global load_openidc_user
         load_openidc_user = login_manager.request_loader(load_openidc_user)
     elif backend == "kerberos_or_ssl":
-        _validate_kerberos_config()
         global load_krb_or_ssl_user_from_request
         load_krb_or_ssl_user_from_request = login_manager.request_loader(
             load_krb_or_ssl_user_from_request
         )
     elif backend == "oidc_or_kerberos":
-        _validate_kerberos_config()
         global load_oidc_or_krb_user_from_request
         load_oidc_or_krb_user_from_request = login_manager.request_loader(
             load_oidc_or_krb_user_from_request

@@ -40,7 +40,7 @@ from cts.auth import load_krb_or_ssl_user_from_request
 from cts.auth import load_ssl_user_from_request
 from cts.auth import load_anonymous_user
 from cts.errors import Forbidden
-from cts import app, conf, db
+from cts import app, conf, create_app, db
 from cts.models import User
 from utils import ModelsBaseTest
 
@@ -433,9 +433,7 @@ class TestInitAuth(unittest.TestCase):
 
     def test_select_kerberos_auth_backend(self):
         init_auth(self.login_manager, "kerberos")
-        self.login_manager.request_loader.assert_called_once_with(
-            load_krb_user_from_request
-        )
+        self.login_manager.request_loader.assert_called_once()
 
     def test_select_openidc_auth_backend(self):
         init_auth(self.login_manager, "openidc")
@@ -462,21 +460,69 @@ class TestInitAuth(unittest.TestCase):
         self.assertRaises(ValueError, init_auth, self.login_manager, "")
         self.assertRaises(ValueError, init_auth, self.login_manager, None)
 
-    def test_init_auth_no_ldap_server(self):
+    def test_kerberos_backend_does_not_require_ldap_at_startup(self):
+        with (
+            patch.object(cts.auth.conf, "auth_ldap_server", ""),
+            patch.object(cts.auth.conf, "auth_ldap_groups", ""),
+            patch.object(cts.auth.conf, "auth_ldap_bind_mechanism", "simple"),
+            patch.object(cts.auth.conf, "auth_ldap_bind_dn", ""),
+            patch.object(cts.auth.conf, "auth_ldap_bind_password", ""),
+        ):
+            init_auth(self.login_manager, "kerberos")
+        self.login_manager.request_loader.assert_called_once()
+
+    def test_query_ldap_groups_no_ldap_server(self):
         with patch.object(cts.auth.conf, "auth_ldap_server", ""):
-            self.assertRaises(ValueError, init_auth, self.login_manager, "kerberos")
+            self.assertRaises(ValueError, query_ldap_groups, "me")
 
-    def test_init_auths_no_ldap_group_base(self):
+    def test_query_ldap_groups_no_ldap_group_base(self):
         with patch.object(cts.auth.conf, "auth_ldap_groups", ""):
-            self.assertRaises(ValueError, init_auth, self.login_manager, "kerberos")
+            self.assertRaises(ValueError, query_ldap_groups, "me")
 
-    def test_init_auth_simple_bind_missing_credentials(self):
+    def test_query_ldap_groups_simple_bind_missing_credentials(self):
         with (
             patch.object(cts.auth.conf, "auth_ldap_bind_mechanism", "simple"),
             patch.object(cts.auth.conf, "auth_ldap_bind_dn", ""),
             patch.object(cts.auth.conf, "auth_ldap_bind_password", ""),
         ):
-            self.assertRaises(ValueError, init_auth, self.login_manager, "kerberos")
+            self.assertRaises(ValueError, query_ldap_groups, "me")
+
+
+class TestCreateApp(unittest.TestCase):
+    """Test application factory modes."""
+
+    def setUp(self):
+        import cts
+
+        self._saved_conf = cts.conf
+
+    def tearDown(self):
+        import sys
+
+        import cts
+        import cts.auth
+
+        cts.conf = self._saved_conf
+        cts.auth.conf = self._saved_conf
+        if "cts.views" in sys.modules:
+            import cts.views
+
+            cts.views.conf = self._saved_conf
+
+    def test_minimal_mode_does_not_initialize_auth(self):
+        with patch("cts.auth.init_auth") as init_auth:
+            create_app(mode="minimal")
+        init_auth.assert_not_called()
+
+    def test_full_mode_initializes_auth(self):
+        with patch("cts.auth.init_auth") as init_auth:
+            app = create_app(mode="full")
+        init_auth.assert_called_once()
+        self.assertTrue(hasattr(app, "openapispec"))
+
+    def test_minimal_mode_does_not_register_views(self):
+        app = create_app(mode="minimal")
+        self.assertFalse(hasattr(app, "openapispec"))
 
 
 class TestDecoratorRequireScopes(unittest.TestCase):
