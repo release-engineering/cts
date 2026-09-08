@@ -75,6 +75,20 @@ if [ "$CONTAINER_ENGINE" = "podman" ]; then
     export KIND_EXPERIMENTAL_PROVIDER=podman
 fi
 
+# kind load docker-image only talks to Docker; with podman, use a saved archive instead.
+load_kind_image() {
+    local image="$1"
+    if [ "$CONTAINER_ENGINE" = "podman" ]; then
+        local archive
+        archive=$(mktemp)
+        podman save "$image" -o "$archive"
+        kind load image-archive "$archive" --name "$KIND_CLUSTER"
+        rm -f "$archive"
+    else
+        kind load docker-image "$image" --name "$KIND_CLUSTER"
+    fi
+}
+
 # ---------------------------------------------------------------------------
 # Cleanup handler
 # ---------------------------------------------------------------------------
@@ -138,8 +152,8 @@ echo ""
 echo "=========================================="
 echo "Loading images into kind"
 echo "=========================================="
-kind load docker-image "$CTS_IMAGE" --name "$KIND_CLUSTER"
-kind load docker-image "$LDAP_IMAGE" --name "$KIND_CLUSTER"
+load_kind_image "$CTS_IMAGE"
+load_kind_image "$LDAP_IMAGE"
 
 # ---------------------------------------------------------------------------
 # Create a fresh namespace (mirrors the ephemeral EaaS namespace in CI)
@@ -224,7 +238,7 @@ echo "=========================================="
 TEST_RUNNER_IMAGE="docker.io/library/python:3.12-slim"
 
 # Pre-pull the image into kind so the pod starts quickly
-kind load docker-image "$TEST_RUNNER_IMAGE" --name "$KIND_CLUSTER" 2>/dev/null || true
+load_kind_image "$TEST_RUNNER_IMAGE" 2>/dev/null || true
 
 kube run cts-test-runner \
     --image="$TEST_RUNNER_IMAGE" \
