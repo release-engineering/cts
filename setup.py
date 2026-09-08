@@ -40,7 +40,7 @@ setup(
     keywords="compose tracking service",
     author="The Compose Team",
     author_email="cts-owner@fedoraproject.org",
-    url="https://pagure.io/cts/",
+    url="https://github.com/release-engineering/cts",
     license="MIT",
     packages=find_packages(exclude=["tests", "tests.*"]),
     include_package_data=True,
