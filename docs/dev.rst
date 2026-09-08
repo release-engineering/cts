@@ -2,37 +2,49 @@
 Development
 ===========
 
-Code Convention
+Developer setup, unit testing, and integration testing are documented in the
+`README on GitHub <https://github.com/release-engineering/cts/blob/main/README.md>`_.
+
+Quick reference
 ===============
 
-The code must be well formatted via ``black`` and pass ``flake8`` checking.
+Code style
+----------
 
-Run ``tox -e black,flake8`` to do the check.
+Format with ``black``, lint with ``flake8``, and scan with ``bandit``::
 
-Install dependencies
-====================
+    tox -e black,flake8,bandit
 
-.. sourcecode:: none
+Unit tests
+----------
 
-    $ pip install -r requirements.txt
+Run the unit test suite with coverage::
 
-Initialize database
-===================
+    tox -e py3
 
-.. sourcecode:: none
+Build documentation
+-------------------
 
-    $ ./create_sqlite_db
+Build the Sphinx HTML docs locally::
 
-Start cts
-=========
+    tox -e docs
 
-.. sourcecode:: none
+Output is written to ``docs/_build/html/``.
 
-    $ ./start_cts_from_here
+Local CTS
+---------
 
-Testing
-=======
+::
 
-.. sourcecode:: none
+    pip install -r requirements.txt
+    ./create_sqlite_db
+    ./start_cts_from_here
 
-    $ tox
+Integration tests
+-----------------
+
+::
+
+    ./integration-tests/run-local.sh
+
+See :doc:`integration` for the full integration-test environment and CI flow.

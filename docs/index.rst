@@ -17,5 +17,6 @@ It provides a REST API to manipulate these metadata and sends UMB messages on ev
    about
    api
    dev
+   integration
 
-.. _Compose Tracking Service (CTS): https://pagure.io/cts
+.. _Compose Tracking Service (CTS): https://github.com/release-engineering/cts
