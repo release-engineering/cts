@@ -1,5 +1,6 @@
 from conf.config import BaseConfiguration
 
+
 class ProdConfiguration(BaseConfiguration):
     AUTH_BACKEND = "oidc_or_kerberos"
     SQLALCHEMY_DATABASE_URI = "postgresql://cts:cts-test@cts-db:5432/cts"
@@ -19,3 +20,7 @@ class ProdConfiguration(BaseConfiguration):
     MESSAGING_KAFKA_PASSWORD = ""
     MESSAGING_KAFKA_COMPRESSION_TYPE = "none"
     MESSAGING_TOPIC_PREFIX = "cts."
+
+
+class CronJobConfiguration(BaseConfiguration):
+    pass

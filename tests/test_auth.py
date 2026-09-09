@@ -31,6 +31,7 @@ from unittest.mock import patch, Mock
 import cts.auth
 
 from werkzeug.exceptions import Unauthorized
+from cts.auth import _validate_kerberos_config
 from cts.auth import init_auth
 from cts.auth import load_krb_user_from_request
 from cts.auth import load_openidc_user
@@ -40,7 +41,7 @@ from cts.auth import load_krb_or_ssl_user_from_request
 from cts.auth import load_ssl_user_from_request
 from cts.auth import load_anonymous_user
 from cts.errors import Forbidden
-from cts import app, db
+from cts import app, create_app, db
 from cts.models import User
 from utils import ModelsBaseTest
 
@@ -550,3 +551,31 @@ class TestDecoratorRequireScopes(unittest.TestCase):
             decorated_func = require_scopes("delete-compose")(mock_func)
             decorated_func(1, 2, 3)
             mock_func.assert_called_once_with(1, 2, 3)
+
+
+class TestCreateApp(unittest.TestCase):
+    def test_cronjob_configuration_skips_auth(self):
+        """CronJobConfiguration has empty AUTH_BACKEND so init_auth is not called."""
+        with patch("cts.init_auth") as mock_init_auth:
+            test_app = create_app(config_section="CronJobConfiguration")
+        mock_init_auth.assert_not_called()
+        self.assertEqual(test_app.config.get("AUTH_BACKEND"), "")
+
+    def test_dev_configuration_initializes_auth(self):
+        """DevConfiguration has AUTH_BACKEND='noauth' so init_auth IS called."""
+        with patch("cts.init_auth") as mock_init_auth:
+            create_app(config_section="DevConfiguration")
+        mock_init_auth.assert_called_once()
+
+    def test_kerberos_backend_validates_config_at_startup(self):
+        """_validate_kerberos_config receives config explicitly,
+        so it works during create_app without an app context."""
+        # TestConfiguration has valid LDAP settings so validation succeeds.
+        _validate_kerberos_config(app.config)
+
+    def test_kerberos_backend_rejects_missing_ldap_server(self):
+        """_validate_kerberos_config raises when LDAP is misconfigured."""
+        bad_config = dict(app.config)
+        bad_config["AUTH_LDAP_SERVER"] = ""
+        with self.assertRaises(ValueError):
+            _validate_kerberos_config(bad_config)

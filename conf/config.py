@@ -124,3 +124,13 @@ class TestConfiguration(BaseConfiguration):
 
 class ProdConfiguration(BaseConfiguration):
     pass
+
+
+class CronJobConfiguration(BaseConfiguration):
+    """Batch jobs (stale-requests cron, migrations) need only the database.
+
+    AUTH_BACKEND is left empty so that ``init_auth`` is not called and no
+    LDAP / Kerberos credentials are required at startup.
+    """
+
+    pass
