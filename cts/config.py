@@ -27,35 +27,11 @@ import sys
 
 from importlib.machinery import SourceFileLoader
 
-from cts import logger
+import cts.logger as logger
 
 
-def init_config(app):
-    """
-    Configure CTS
-    """
-    config_module = None
-    config_file = "/etc/cts/config.py"
-    config_section = "DevConfiguration"
-
-    # automagically detect production environment:
-    #   - existing and readable config_file presets ProdConfiguration
-    try:
-        with open(config_file):
-            config_section = "ProdConfiguration"
-    except (OSError, IOError) as e:
-        # Use stderr here, because logging is not initialized so far...
-        sys.stderr.write("WARN: Cannot open %s: %s\n" % (config_file, e.strerror))
-        sys.stderr.write("WARN: DevConfiguration will be used.\n")
-
-    # try getting config_file from os.environ
-    if "CTS_CONFIG_FILE" in os.environ:
-        config_file = os.environ["CTS_CONFIG_FILE"]
-    # try getting config_section from os.environ
-    if "CTS_CONFIG_SECTION" in os.environ:
-        config_section = os.environ["CTS_CONFIG_SECTION"]
-    # TestConfiguration shall only be used for running tests, otherwise...
-    if any(
+def _is_pytest():
+    return any(
         [
             "nosetests" in arg
             or "noserunner.py" in arg
@@ -63,25 +39,57 @@ def init_config(app):
             or "pytest" in arg
             for arg in sys.argv
         ]
-    ):
-        config_section = "TestConfiguration"
-        from conf import config
+    )
 
-        config_module = config
-    # ...CTS_DEVELOPER_ENV has always the last word
-    # and overrides anything previously set before!
-    # In any of the following cases, use configuration directly from CTS
-    # package -> /conf/config.py.
 
-    elif "CTS_DEVELOPER_ENV" in os.environ and os.environ[
-        "CTS_DEVELOPER_ENV"
-    ].lower() in ("1", "on", "true", "y", "yes"):
-        config_section = "DevConfiguration"
-        from conf import config
+def _is_developer_env():
+    return os.environ.get("CTS_DEVELOPER_ENV", "").lower() in (
+        "1",
+        "on",
+        "true",
+        "y",
+        "yes",
+    )
 
-        config_module = config
-    # try loading configuration from file
-    if not config_module:
+
+def _use_repo_config_module(config_file):
+    if _is_pytest() or _is_developer_env():
+        return True
+    try:
+        with open(config_file):
+            return False
+    except (OSError, IOError):
+        return True
+
+
+def init_config(app, config_section=None):
+    """
+    Configure CTS
+    """
+    config_file = os.environ.get("CTS_CONFIG_FILE", "/etc/cts/config.py")
+
+    if config_section is None:
+        config_section = os.environ.get("CTS_CONFIG_SECTION")
+
+    if config_section is None:
+        if _is_pytest():
+            config_section = "TestConfiguration"
+        elif _is_developer_env():
+            config_section = "DevConfiguration"
+        else:
+            try:
+                with open(config_file):
+                    config_section = "ProdConfiguration"
+            except (OSError, IOError) as e:
+                sys.stderr.write(
+                    "WARN: Cannot open %s: %s\n" % (config_file, e.strerror)
+                )
+                sys.stderr.write("WARN: DevConfiguration will be used.\n")
+                config_section = "DevConfiguration"
+
+    if _use_repo_config_module(config_file):
+        from conf import config as config_module
+    else:
         try:
             config_module = SourceFileLoader(
                 "cts_runtime_config", config_file
@@ -91,8 +99,13 @@ def init_config(app):
                 "Configuration file {} was not found.".format(config_file)
             )
 
-    # finally configure CTS
-    config_section_obj = getattr(config_module, config_section)
+    try:
+        config_section_obj = getattr(config_module, config_section)
+    except AttributeError:
+        raise SystemError(
+            "Configuration section {} was not found.".format(config_section)
+        )
+
     conf = Config(config_section_obj)
     app.config.from_object(config_section_obj)
     return conf
