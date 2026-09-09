@@ -32,7 +32,7 @@ from prometheus_client import (  # noqa: F401
     multiprocess,
 )
 
-from cts import db
+from cts.extensions import db
 
 # This environment variable should be set if deployment uses multiple
 # processes.

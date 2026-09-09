@@ -28,7 +28,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 from unittest.mock import patch, ANY, call, Mock
 
-from cts import conf
 from cts import app, db
 import cts.messaging
 from cts.messaging import _retry_with_backoff, _kafka_send_msg, _umb_send_msg, publish
@@ -67,7 +66,7 @@ class TestRHMsgSendMessageWhenComposeIsCreated(ModelsBaseTest):
         User.create_user(username="odcs")
         db.session.commit()
 
-    @patch.object(conf, "messaging_backend", new="rhmsg")
+    @patch.dict(app.config, {"MESSAGING_BACKEND": "rhmsg"})
     @patch("rhmsg.activemq.producer.AMQProducer")
     @patch("proton.Message")
     def test_send_message(self, Message, AMQProducer):
@@ -108,10 +107,15 @@ class TestKafkaSendMessageWhenComposeIsCreated(ModelsBaseTest):
         User.create_user(username="odcs")
         db.session.commit()
 
-    @patch.object(conf, "messaging_backend", new="kafka")
-    @patch.object(conf, "messaging_broker_urls", new=["localhost:9092"])
-    @patch.object(conf, "messaging_kafka_username", new="test_user")
-    @patch.object(conf, "messaging_kafka_password", new="test_password")
+    @patch.dict(
+        app.config,
+        {
+            "MESSAGING_BACKEND": "kafka",
+            "MESSAGING_BROKER_URLS": ["localhost:9092"],
+            "MESSAGING_KAFKA_USERNAME": "test_user",
+            "MESSAGING_KAFKA_PASSWORD": "test_password",
+        },
+    )
     @patch("kafka.KafkaProducer")
     def test_send_message(self, KafkaProducer):
         mock_producer = KafkaProducer.return_value
@@ -143,9 +147,6 @@ class TestKafkaSendMessageWhenComposeIsCreated(ModelsBaseTest):
             # Producer should not be closed on success (long-lived)
             mock_producer.close.assert_not_called()
 
-    @patch.object(conf, "messaging_broker_urls", new=["localhost:9092"])
-    @patch.object(conf, "messaging_kafka_username", new="test_user")
-    @patch.object(conf, "messaging_kafka_password", new="test_password")
     @patch("kafka.KafkaProducer")
     def test_kafka_producer_closed_on_delivery_failure(self, KafkaProducer):
         """Test that producer is reset when flush() reports delivery failure."""
@@ -153,23 +154,30 @@ class TestKafkaSendMessageWhenComposeIsCreated(ModelsBaseTest):
         mock_producer.flush.side_effect = Exception("Delivery failed")
 
         msgs = [{"event": "test", "data": "test_data"}]
+        msg_conf = {
+            "MESSAGING_BROKER_URLS": ["localhost:9092"],
+            "MESSAGING_KAFKA_USERNAME": "test_user",
+            "MESSAGING_KAFKA_PASSWORD": "test_password",
+        }
 
         with self.assertRaises(Exception):
-            _kafka_send_msg(msgs)
+            _kafka_send_msg(msgs, msg_conf)
 
         mock_producer.close.assert_called_once()
         self.assertIsNone(cts.messaging._kafka_producer)
 
-    @patch.object(conf, "messaging_broker_urls", new=["localhost:9092"])
-    @patch.object(conf, "messaging_kafka_username", new="test_user")
-    @patch.object(conf, "messaging_kafka_password", new="test_password")
     @patch("kafka.KafkaProducer")
     def test_kafka_producer_reused_across_calls(self, KafkaProducer):
         """Test that producer is created once and reused"""
         mock_producer = KafkaProducer.return_value
+        msg_conf = {
+            "MESSAGING_BROKER_URLS": ["localhost:9092"],
+            "MESSAGING_KAFKA_USERNAME": "test_user",
+            "MESSAGING_KAFKA_PASSWORD": "test_password",
+        }
 
-        _kafka_send_msg([{"event": "compose-created", "compose": {}}])
-        _kafka_send_msg([{"event": "compose-tagged", "compose": {}}])
+        _kafka_send_msg([{"event": "compose-created", "compose": {}}], msg_conf)
+        _kafka_send_msg([{"event": "compose-tagged", "compose": {}}], msg_conf)
 
         # Producer should only be created once
         KafkaProducer.assert_called_once()
@@ -177,14 +185,16 @@ class TestKafkaSendMessageWhenComposeIsCreated(ModelsBaseTest):
         self.assertEqual(mock_producer.send.call_count, 2)
         self.assertEqual(mock_producer.flush.call_count, 2)
 
-    @patch.object(conf, "messaging_broker_urls", new=["localhost:9092"])
-    @patch.object(conf, "messaging_kafka_username", new="test_user")
-    @patch.object(conf, "messaging_kafka_password", new="test_password")
-    @patch.object(conf, "messaging_kafka_compression_type", new="none")
     @patch("kafka.KafkaProducer")
     def test_kafka_producer_normalizes_none_compression(self, KafkaProducer):
         """Config value 'none' must become None for kafka-python."""
-        _kafka_send_msg([{"event": "compose-created", "compose": {}}])
+        msg_conf = {
+            "MESSAGING_BROKER_URLS": ["localhost:9092"],
+            "MESSAGING_KAFKA_USERNAME": "test_user",
+            "MESSAGING_KAFKA_PASSWORD": "test_password",
+            "MESSAGING_KAFKA_COMPRESSION_TYPE": "none",
+        }
+        _kafka_send_msg([{"event": "compose-created", "compose": {}}], msg_conf)
 
         call_args = KafkaProducer.call_args[1]
         self.assertIsNone(call_args["compression_type"])
@@ -261,7 +271,8 @@ class TestMessaging(ModelsBaseTest):
                         "agent": "odcs",
                         "compose": compose.json(),
                     }
-                ]
+                ],
+                config=ANY,
             )
 
     def test_message_compose_tag(self, publish):
@@ -281,7 +292,8 @@ class TestMessaging(ModelsBaseTest):
                     "agent": "odcs",
                     "user_data": None,
                 }
-            ]
+            ],
+            config=ANY,
         )
         self.assertEqual(publish.mock_calls[0], expected_call)
 
@@ -294,7 +306,8 @@ class TestMessaging(ModelsBaseTest):
                     "agent": "odcs",
                     "user_data": "add nightly tag",
                 }
-            ]
+            ],
+            config=ANY,
         )
         self.assertEqual(publish.mock_calls[1], expected_call)
 
@@ -320,7 +333,8 @@ class TestMessaging(ModelsBaseTest):
                     "agent": "odcs",
                     "user_data": None,
                 }
-            ]
+            ],
+            config=ANY,
         )
         self.assertEqual(publish.mock_calls[2], expected_call)
 
@@ -333,7 +347,8 @@ class TestMessaging(ModelsBaseTest):
                     "agent": "odcs",
                     "user_data": "untag nightly",
                 }
-            ]
+            ],
+            config=ANY,
         )
         self.assertEqual(publish.mock_calls[3], expected_call)
 
@@ -371,7 +386,8 @@ class TestMessaging(ModelsBaseTest):
                     "user_data": None,
                     "agent": "odcs",
                 }
-            ]
+            ],
+            config=ANY,
         )
         self.assertEqual(publish.mock_calls[4], expected_call)
 
@@ -384,7 +400,8 @@ class TestMessaging(ModelsBaseTest):
                     "user_data": None,
                     "agent": "odcs",
                 }
-            ]
+            ],
+            config=ANY,
         )
         self.assertEqual(publish.mock_calls[5], expected_call)
 
@@ -397,7 +414,8 @@ class TestMessaging(ModelsBaseTest):
                     "user_data": None,
                     "agent": "odcs",
                 }
-            ]
+            ],
+            config=ANY,
         )
         self.assertEqual(publish.mock_calls[6], expected_call)
 
@@ -410,7 +428,8 @@ class TestMessaging(ModelsBaseTest):
                     "user_data": None,
                     "agent": "odcs",
                 }
-            ]
+            ],
+            config=ANY,
         )
         self.assertEqual(publish.mock_calls[7], expected_call)
         # There should be 8 mock calls, since timeout is not occured for development-nightly-requested compose and nightly compose is not retagged
@@ -469,26 +488,29 @@ class TestRetryAndAsyncPublish(unittest.TestCase):
         # Mock the backend to simulate slow operation
         slow_backend = Mock()
 
-        def slow_send(msgs):
+        def slow_send(msgs, msg_conf):
             time.sleep(0.1)  # Simulate slow message sending
 
         slow_backend.side_effect = slow_send
         test_executor = ThreadPoolExecutor(max_workers=1)
 
-        with patch("cts.messaging._get_messaging_backend", return_value=slow_backend):
-            with patch("cts.messaging._executor", test_executor):
-                start = time.time()
-                publish([{"event": "test"}])
-                elapsed = time.time() - start
+        with app.app_context():
+            with patch(
+                "cts.messaging._get_messaging_backend", return_value=slow_backend
+            ):
+                with patch("cts.messaging._executor", test_executor):
+                    start = time.time()
+                    publish([{"event": "test"}])
+                    elapsed = time.time() - start
 
-                # publish() should return immediately (much less than 0.1s)
-                self.assertLess(elapsed, 0.05)
+                    # publish() should return immediately (much less than 0.1s)
+                    self.assertLess(elapsed, 0.05)
 
-                # Wait for background thread to complete
-                test_executor.shutdown(wait=True, cancel_futures=False)
+                    # Wait for background thread to complete
+                    test_executor.shutdown(wait=True, cancel_futures=False)
 
-                # Now the backend should have been called
-                slow_backend.assert_called_once()
+                    # Now the backend should have been called
+                    slow_backend.assert_called_once()
 
     def test_publish_error_handling_in_background_thread(self):
         """Test that errors in background thread are logged properly"""
@@ -497,20 +519,21 @@ class TestRetryAndAsyncPublish(unittest.TestCase):
         failing_backend = Mock(side_effect=RuntimeError("Connection failed"))
         test_executor = ThreadPoolExecutor(max_workers=1)
 
-        with patch(
-            "cts.messaging._get_messaging_backend", return_value=failing_backend
-        ):
-            with patch("cts.messaging._executor", test_executor):
-                with patch("cts.messaging.log") as mock_log:
-                    publish([{"event": "test"}])
+        with app.app_context():
+            with patch(
+                "cts.messaging._get_messaging_backend", return_value=failing_backend
+            ):
+                with patch("cts.messaging._executor", test_executor):
+                    with patch("cts.messaging.log") as mock_log:
+                        publish([{"event": "test"}])
 
-                    # Wait for background thread to complete
-                    test_executor.shutdown(wait=True, cancel_futures=False)
+                        # Wait for background thread to complete
+                        test_executor.shutdown(wait=True, cancel_futures=False)
 
-                    # Error should have been logged
-                    mock_log.exception.assert_called_once_with(
-                        "Failed to publish messages to message broker."
-                    )
+                        # Error should have been logged
+                        mock_log.exception.assert_called_once_with(
+                            "Failed to publish messages to message broker."
+                        )
 
 
 @unittest.skipUnless(rhmsg, "rhmsg is required to run this test case.")
@@ -532,12 +555,20 @@ class TestRhmsgRetries(unittest.TestCase):
                 raise ConnectionError("Transient network error")
             return mock_producer.return_value
 
+        msg_conf = {
+            "MESSAGING_BROKER_URLS": [],
+            "MESSAGING_CERT_FILE": "",
+            "MESSAGING_KEY_FILE": "",
+            "MESSAGING_CA_CERT": "",
+            "MESSAGING_TOPIC_PREFIX": "cts.",
+        }
+
         with patch("time.sleep"):  # Mock sleep to speed up test
             with patch(
                 "rhmsg.activemq.producer.AMQProducer", side_effect=producer_side_effect
             ):
                 # Should succeed on second attempt
-                _umb_send_msg([{"event": "test", "data": "test"}])
+                _umb_send_msg([{"event": "test", "data": "test"}], msg_conf)
 
         self.assertEqual(attempt_count[0], 2)
 
@@ -552,16 +583,18 @@ class TestKafkaDelivery(unittest.TestCase):
     def tearDown(self):
         cts.messaging._close_kafka_producer()
 
-    @patch.object(conf, "messaging_broker_urls", new=["localhost:9092"])
-    @patch.object(conf, "messaging_kafka_username", new="test_user")
-    @patch.object(conf, "messaging_kafka_password", new="test_password")
-    @patch.object(conf, "messaging_topic_prefix", new="cts.")
     @patch("kafka.KafkaProducer")
     def test_kafka_send_msg_flushes_after_send(self, KafkaProducer):
         """Test that _kafka_send_msg waits for delivery via flush()."""
         mock_producer = KafkaProducer.return_value
+        msg_conf = {
+            "MESSAGING_BROKER_URLS": ["localhost:9092"],
+            "MESSAGING_KAFKA_USERNAME": "test_user",
+            "MESSAGING_KAFKA_PASSWORD": "test_password",
+            "MESSAGING_TOPIC_PREFIX": "cts.",
+        }
 
-        _kafka_send_msg([{"event": "test", "data": "test"}])
+        _kafka_send_msg([{"event": "test", "data": "test"}], msg_conf)
 
         mock_producer.send.assert_called_once()
         mock_producer.flush.assert_called_once()

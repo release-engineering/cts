@@ -35,32 +35,15 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExport
 from werkzeug.exceptions import BadRequest, NotFound as WerkzeugNotFound, Unauthorized
 
 from cts._version import version  # noqa: F401
+from cts.auth import init_auth
 from cts.config import init_config
 from cts.errors import Forbidden, NotFound
 from cts.extensions import db, login_manager, migrate, migrations_dir
 from cts.logger import init_logging
 from cts.proxy import ReverseProxy
+from cts.views import register_views
 
-# conf and log must be defined before importing auth/views, which
-# read them at import time via ``from cts import conf, log``.
-conf = None
 log = getLogger(__name__)
-
-from cts.auth import init_auth  # noqa: E402
-from cts.views import register_views  # noqa: E402
-
-
-def _sync_conf_binding():
-    """Rebind conf in modules that imported it before initialization."""
-    import sys
-
-    import cts.auth
-
-    cts.auth.conf = conf
-    if "cts.views" in sys.modules:
-        import cts.views
-
-        cts.views.conf = conf
 
 
 def create_app(config_section=None):
@@ -71,23 +54,20 @@ def create_app(config_section=None):
         section is resolved from the environment and runtime context
         (see :func:`cts.config.init_config`).
     """
-    global conf
-
     app = Flask(__name__)
     app.wsgi_app = ReverseProxy(app.wsgi_app)
 
-    conf = init_config(app, config_section=config_section)
-    _sync_conf_binding()
+    init_config(app, config_section=config_section)
     db.init_app(app)
-    init_logging(conf)
+    init_logging(app.config)
     login_manager.init_app(app)
     migrate.init_app(app, db, directory=migrations_dir)
 
     import cts.models  # noqa: F401
 
-    auth_backend = conf.auth_backend
+    auth_backend = app.config.get("AUTH_BACKEND", "")
     if auth_backend:
-        init_auth(login_manager, auth_backend)
+        init_auth(login_manager, auth_backend, app.config)
 
     register_views(app)
     _register_error_handlers(app)

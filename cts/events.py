@@ -103,5 +103,5 @@ def start_to_publish_messages(session):
         log.debug("Sending messages: %s", msgs)
         if msgs:
             # Publish asynchronously - returns immediately
-            messaging.publish(msgs)
+            messaging.publish(msgs, config=flask.current_app.config)
         _cached_composes.clear()

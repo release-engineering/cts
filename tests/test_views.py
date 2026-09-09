@@ -29,7 +29,7 @@ import flask
 from unittest.mock import patch
 
 import cts.auth
-from cts import conf, db, app, login_manager, version
+from cts import db, app, login_manager, version
 from cts.models import Compose, User, Tag
 
 from utils import ModelsBaseTest
@@ -44,22 +44,15 @@ class ViewBaseTest(ModelsBaseTest):
     def setUp(self):
         super(ViewBaseTest, self).setUp()
 
-        self.oidc_base_namespace = patch.object(
-            conf, "oidc_base_namespace", new="http://example.com/"
+        self.patch_config = patch.dict(
+            app.config,
+            {
+                "OIDC_BASE_NAMESPACE": "http://example.com/",
+                "ALLOWED_BUILDERS": {"groups": [], "users": ["odcs"]},
+                "ADMINS": {"groups": ["admin"], "users": ["root"]},
+            },
         )
-        self.oidc_base_namespace.start()
-
-        patched_allowed_builders = {
-            "groups": [],
-            "users": ["odcs"],
-        }
-        patched_admins = {"groups": ["admin"], "users": ["root"]}
-        self.patch_allowed_builders = patch.object(
-            cts.auth.conf, "allowed_builders", new=patched_allowed_builders
-        )
-        self.patch_admins = patch.object(cts.auth.conf, "admins", new=patched_admins)
-        self.patch_allowed_builders.start()
-        self.patch_admins.start()
+        self.patch_config.start()
 
         self.client = app.test_client()
 
@@ -68,9 +61,7 @@ class ViewBaseTest(ModelsBaseTest):
     def tearDown(self):
         super(ViewBaseTest, self).tearDown()
 
-        self.oidc_base_namespace.stop()
-        self.patch_allowed_builders.stop()
-        self.patch_admins.stop()
+        self.patch_config.stop()
 
     @contextlib.contextmanager
     def _test_request_context(self, user=None, groups=None, **kwargs):
@@ -78,8 +69,8 @@ class ViewBaseTest(ModelsBaseTest):
             patch_auth_backend = None
             if user is not None:
                 # authentication is disabled with auth_backend=noauth
-                patch_auth_backend = patch.object(
-                    cts.auth.conf, "auth_backend", new="kerberos"
+                patch_auth_backend = patch.dict(
+                    app.config, {"AUTH_BACKEND": "kerberos"}
                 )
                 patch_auth_backend.start()
                 if not User.find_user_by_name(user):
@@ -88,7 +79,7 @@ class ViewBaseTest(ModelsBaseTest):
                 flask.g.user = User.find_user_by_name(user)
                 flask.g._login_user = flask.g.user
                 flask.g.oidc_scopes = [
-                    "{0}{1}".format(conf.oidc_base_namespace, "new-compose")
+                    "{0}{1}".format(app.config["OIDC_BASE_NAMESPACE"], "new-compose")
                 ]
 
                 if groups is not None:
@@ -116,8 +107,8 @@ class TestOpenIDCLogin(ViewBaseTest):
 
     def setUp(self):
         super(TestOpenIDCLogin, self).setUp()
-        self.patch_auth_backend = patch.object(
-            cts.auth.conf, "auth_backend", new="openidc"
+        self.patch_auth_backend = patch.dict(
+            app.config, {"AUTH_BACKEND": "openidc", "LOGIN_DISABLED": False}
         )
         self.patch_auth_backend.start()
 
@@ -173,7 +164,7 @@ class TestViews(ViewBaseTest):
             {
                 "version": version,
                 "auth_backend": "noauth",
-                "allowed_builders": conf.allowed_builders,
+                "allowed_builders": app.config["ALLOWED_BUILDERS"],
             },
         )
 
