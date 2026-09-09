@@ -72,10 +72,8 @@ def cache_composes_if_state_changed(session, flush_context):
                 "event": event,
                 "compose": comp.json(),
             }
-            if flask.g.user:
-                extra_args["agent"] = flask.g.user.username
-            else:
-                extra_args["agent"] = None
+            user = getattr(flask.g, "user", None)
+            extra_args["agent"] = user.username if user else None
             # Add telemetry information. This includes an extra key
             # traceparent.
             TraceContextTextMapPropagator().inject(extra_args)
