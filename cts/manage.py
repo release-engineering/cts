@@ -20,51 +20,72 @@
 # SOFTWARE.
 
 from datetime import timedelta
+import json
 import logging
 import os
 import ssl
 
 import click
-import flask_migrate
 
+from flask import current_app
 from flask.cli import FlaskGroup
 from werkzeug.serving import run_simple
 
-from cts import app, conf, db, models
+from cts import create_app, db, models
+
+_DEFAULT_HOST = "127.0.0.1"
+_DEFAULT_PORT = 5005
 
 
-def _establish_ssl_context():
-    if not conf.ssl_enabled:
+def _cli_config_section():
+    return os.environ.get("CTS_CONFIG_SECTION")
+
+
+def _web_config_section():
+    if os.environ.get("CTS_CONFIG_SECTION"):
+        return os.environ["CTS_CONFIG_SECTION"]
+    if os.environ.get("CTS_DEVELOPER_ENV", "").lower() in (
+        "1",
+        "on",
+        "true",
+        "y",
+        "yes",
+    ):
+        return "DevConfiguration"
+    return "ProdConfiguration"
+
+
+def _establish_ssl_context(config):
+    if not config.get("SSL_ENABLED"):
         return None
-    # First, do some validation of the configuration
     attributes = (
-        "ssl_certificate_file",
-        "ssl_certificate_key_file",
-        "ssl_ca_certificate_file",
+        "SSL_CERTIFICATE_FILE",
+        "SSL_CERTIFICATE_KEY_FILE",
+        "SSL_CA_CERTIFICATE_FILE",
     )
 
     for attribute in attributes:
-        value = getattr(conf, attribute, None)
+        value = config.get(attribute)
         if not value:
             raise ValueError("%r could not be found" % attribute)
         if not os.path.exists(value):
             raise OSError("%s: %s file not found." % (attribute, value))
 
-    # Then, establish the ssl context and return it
     ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-    ssl_ctx.load_cert_chain(conf.ssl_certificate_file, conf.ssl_certificate_key_file)
+    ssl_ctx.load_cert_chain(
+        config["SSL_CERTIFICATE_FILE"], config["SSL_CERTIFICATE_KEY_FILE"]
+    )
     ssl_ctx.verify_mode = ssl.CERT_OPTIONAL
-    ssl_ctx.load_verify_locations(cafile=conf.ssl_ca_certificate_file)
+    ssl_ctx.load_verify_locations(cafile=config["SSL_CA_CERTIFICATE_FILE"])
     return ssl_ctx
 
 
-@click.group(cls=FlaskGroup, create_app=lambda *args, **kwargs: app)
+@click.group(
+    cls=FlaskGroup,
+    create_app=lambda: create_app(config_section=_cli_config_section()),
+)
 def cli():
     """Manage CTS application"""
-
-
-migrations_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "migrations")
-flask_migrate.Migrate(app, db, directory=migrations_dir)
 
 
 @cli.command()
@@ -72,12 +93,16 @@ def generatelocalhostcert():
     """Creates a public/private key pair for message signing and the frontend"""
     from OpenSSL import crypto
 
+    config = current_app.config
+    key_file = config["SSL_CERTIFICATE_KEY_FILE"]
+    cert_file_path = config["SSL_CERTIFICATE_FILE"]
+
     cert_key = crypto.PKey()
     cert_key.generate_key(crypto.TYPE_RSA, 2048)
 
-    with open(conf.ssl_certificate_key_file, "w") as cert_key_file:
-        os.chmod(conf.ssl_certificate_key_file, 0o600)
-        cert_key_file.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, cert_key))
+    with open(key_file, "w") as f:
+        os.chmod(key_file, 0o600)
+        f.write(crypto.dump_privatekey(crypto.FILETYPE_PEM, cert_key))
 
     cert = crypto.X509()
     msg_cert_subject = cert.get_subject()
@@ -100,19 +125,22 @@ def generatelocalhostcert():
     cert.add_extensions(cert_extensions)
     cert.sign(cert_key, "sha256")
 
-    with open(conf.ssl_certificate_file, "w") as cert_file:
-        cert_file.write(crypto.dump_certificate(crypto.FILETYPE_PEM, cert))
+    with open(cert_file_path, "w") as f:
+        f.write(crypto.dump_certificate(crypto.FILETYPE_PEM, cert))
 
 
 @cli.command()
-@click.option("-h", "--host", default=conf.host, help="Bind to this address")
-@click.option("-p", "--port", type=int, default=conf.port, help="Listen on this port")
-@click.option("-d", "--debug", is_flag=True, default=conf.debug, help="Debug mode")
-def runssl(host=conf.host, port=conf.port, debug=conf.debug):
+@click.option("-h", "--host", default=_DEFAULT_HOST, help="Bind to this address")
+@click.option(
+    "-p", "--port", type=int, default=_DEFAULT_PORT, help="Listen on this port"
+)
+@click.option("-d", "--debug", is_flag=True, default=False, help="Debug mode")
+def runssl(host, port, debug):
     """Runs the Flask app with the HTTPS settings configured in config.py"""
     logging.info("Starting CTS frontend")
 
-    ssl_ctx = _establish_ssl_context()
+    app = create_app(config_section=_web_config_section())
+    ssl_ctx = _establish_ssl_context(app.config)
     run_simple(host, port, app, use_debugger=debug, ssl_context=ssl_ctx)
 
 
@@ -160,8 +188,7 @@ def check_stale_requests(timeout):
 @cli.command()
 def openapispec():
     """Dump OpenAPI specification"""
-    import json
-
+    app = create_app(config_section=_web_config_section())
     print(json.dumps(app.openapispec.to_dict(), indent=2))
 
 
