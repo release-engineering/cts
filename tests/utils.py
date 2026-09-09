@@ -30,34 +30,11 @@ from cts.events import cache_composes_if_state_changed
 from cts.events import start_to_publish_messages
 
 from flask_sqlalchemy import SignallingSession
-from unittest.mock import patch
 
 
 class AnyStringWith(str):
     def __eq__(self, other):
         return self in str(other)
-
-
-class ConfigPatcher(object):
-    def __init__(self, config_obj):
-        self.objects = []
-        self.config_obj = config_obj
-
-    def patch(self, key, value):
-        try:
-            obj = patch.object(self.config_obj, key, new=value)
-        except Exception:
-            self.stop()
-            raise
-        self.objects.append(obj)
-
-    def start(self):
-        for obj in self.objects:
-            obj.start()
-
-    def stop(self):
-        for obj in self.objects:
-            obj.stop()
 
 
 class ModelsBaseTest(unittest.TestCase):

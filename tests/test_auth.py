@@ -40,7 +40,7 @@ from cts.auth import load_krb_or_ssl_user_from_request
 from cts.auth import load_ssl_user_from_request
 from cts.auth import load_anonymous_user
 from cts.errors import Forbidden
-from cts import app, conf, db
+from cts import app, db
 from cts.models import User
 from utils import ModelsBaseTest
 
@@ -324,9 +324,7 @@ class TestLoadOpenIDCUserFromRequest(ModelsBaseTest):
             "OIDC_CLAIM_scope": "openid https://id.fedoraproject.org/scope/groups",
         }
 
-        with patch.object(
-            cts.auth.conf, "auth_openidc_required_scopes", ["new-compose"]
-        ):
+        with patch.dict(app.config, {"AUTH_OPENIDC_REQUIRED_SCOPES": ["new-compose"]}):
             with app.test_request_context(environ_base=environ_base):
                 with self.assertRaises(Unauthorized) as ctx:
                     load_openidc_user(flask.request)
@@ -339,18 +337,26 @@ class TestLoadOpenIDCUserFromRequest(ModelsBaseTest):
 class TestQueryLdapGroups(unittest.TestCase):
     """Test auth.query_ldap_groups"""
 
-    @patch.object(
-        conf,
-        "auth_ldap_groups",
-        new=[
-            ("ou=Groups,dc=example,dc=com", "memberUid={}"),
-            (
-                "ou=adhoc,ou=managedGroups,dc=example,dc=com",
-                "uniqueMember=uid={},ou=users,dc=example,dc=com",
-            ),
-        ],
+    def setUp(self):
+        self._ctx = app.app_context()
+        self._ctx.push()
+
+    def tearDown(self):
+        self._ctx.pop()
+
+    @patch.dict(
+        app.config,
+        {
+            "AUTH_LDAP_GROUPS": [
+                ("ou=Groups,dc=example,dc=com", "memberUid={}"),
+                (
+                    "ou=adhoc,ou=managedGroups,dc=example,dc=com",
+                    "uniqueMember=uid={},ou=users,dc=example,dc=com",
+                ),
+            ],
+            "AUTH_LDAP_BIND_MECHANISM": "none",
+        },
     )
-    @patch.object(conf, "auth_ldap_bind_mechanism", new="none")
     @patch("cts.auth.ldap.initialize")
     def test_get_groups(self, initialize):
         initialize.return_value.search_s.side_effect = [
@@ -376,12 +382,15 @@ class TestQueryLdapGroups(unittest.TestCase):
         self.assertEqual(sorted(["ctsdev", "devel", "ctsadmin"]), sorted(groups))
         initialize.return_value.unbind_s.assert_called_once_with()
 
-    @patch.object(
-        conf,
-        "auth_ldap_groups",
-        new=[("ou=Groups,dc=example,dc=com", "memberUid={}")],
+    @patch.dict(
+        app.config,
+        {
+            "AUTH_LDAP_GROUPS": [
+                ("ou=Groups,dc=example,dc=com", "memberUid={}"),
+            ],
+            "AUTH_LDAP_BIND_MECHANISM": "gssapi",
+        },
     )
-    @patch.object(conf, "auth_ldap_bind_mechanism", new="gssapi")
     @patch("cts.auth.ldap.initialize")
     def test_get_groups_with_gssapi_bind(self, initialize):
         initialize.return_value.search_s.return_value = [
@@ -392,14 +401,17 @@ class TestQueryLdapGroups(unittest.TestCase):
         self.assertEqual(["devel"], groups)
         initialize.return_value.sasl_gssapi_bind_s.assert_called_once_with()
 
-    @patch.object(
-        conf,
-        "auth_ldap_groups",
-        new=[("ou=Groups,dc=example,dc=com", "memberUid={}")],
+    @patch.dict(
+        app.config,
+        {
+            "AUTH_LDAP_GROUPS": [
+                ("ou=Groups,dc=example,dc=com", "memberUid={}"),
+            ],
+            "AUTH_LDAP_BIND_PASSWORD": "secret",
+            "AUTH_LDAP_BIND_DN": "cn=svc,dc=example,dc=com",
+            "AUTH_LDAP_BIND_MECHANISM": "simple",
+        },
     )
-    @patch.object(conf, "auth_ldap_bind_password", new="secret")
-    @patch.object(conf, "auth_ldap_bind_dn", new="cn=svc,dc=example,dc=com")
-    @patch.object(conf, "auth_ldap_bind_mechanism", new="simple")
     @patch("cts.auth.ldap.initialize")
     def test_get_groups_with_simple_bind(self, initialize):
         initialize.return_value.search_s.return_value = [
@@ -413,7 +425,7 @@ class TestQueryLdapGroups(unittest.TestCase):
             "secret",
         )
 
-    @patch.object(conf, "auth_ldap_bind_mechanism", new="gssapi")
+    @patch.dict(app.config, {"AUTH_LDAP_BIND_MECHANISM": "gssapi"})
     @patch("cts.auth.ldap.initialize")
     def test_ldap_error_with_unexpected_args_is_logged(self, initialize):
         initialize.return_value.sasl_gssapi_bind_s.side_effect = ldap.LDAPError(
@@ -432,58 +444,69 @@ class TestInitAuth(unittest.TestCase):
         self.login_manager = Mock()
 
     def test_select_kerberos_auth_backend(self):
-        init_auth(self.login_manager, "kerberos")
+        init_auth(self.login_manager, "kerberos", app.config)
         self.login_manager.request_loader.assert_called_once_with(
             load_krb_user_from_request
         )
 
     def test_select_openidc_auth_backend(self):
-        init_auth(self.login_manager, "openidc")
+        init_auth(self.login_manager, "openidc", app.config)
         self.login_manager.request_loader.assert_called_once_with(load_openidc_user)
 
     def test_select_ssl_auth_backend(self):
-        init_auth(self.login_manager, "ssl")
+        init_auth(self.login_manager, "ssl", app.config)
         self.login_manager.request_loader.assert_called_once_with(
             load_ssl_user_from_request
         )
 
     def test_select_kerberos_or_ssl_auth_backend(self):
-        init_auth(self.login_manager, "kerberos_or_ssl")
+        init_auth(self.login_manager, "kerberos_or_ssl", app.config)
         self.login_manager.request_loader.assert_called_once_with(
             load_krb_or_ssl_user_from_request
         )
 
     def test_not_use_auth_backend(self):
-        init_auth(self.login_manager, "noauth")
+        init_auth(self.login_manager, "noauth", app.config)
         self.login_manager.request_loader.assert_called_once_with(load_anonymous_user)
 
     def test_error_if_select_an_unknown_backend(self):
-        self.assertRaises(ValueError, init_auth, self.login_manager, "xxx")
-        self.assertRaises(ValueError, init_auth, self.login_manager, "")
-        self.assertRaises(ValueError, init_auth, self.login_manager, None)
+        self.assertRaises(ValueError, init_auth, self.login_manager, "xxx", app.config)
+        self.assertRaises(ValueError, init_auth, self.login_manager, "", app.config)
+        self.assertRaises(ValueError, init_auth, self.login_manager, None, app.config)
 
     def test_init_auth_no_ldap_server(self):
-        with patch.object(cts.auth.conf, "auth_ldap_server", ""):
-            self.assertRaises(ValueError, init_auth, self.login_manager, "kerberos")
+        with patch.dict(app.config, {"AUTH_LDAP_SERVER": ""}):
+            self.assertRaises(
+                ValueError, init_auth, self.login_manager, "kerberos", app.config
+            )
 
     def test_init_auths_no_ldap_group_base(self):
-        with patch.object(cts.auth.conf, "auth_ldap_groups", ""):
-            self.assertRaises(ValueError, init_auth, self.login_manager, "kerberos")
+        with patch.dict(app.config, {"AUTH_LDAP_GROUPS": ""}):
+            self.assertRaises(
+                ValueError, init_auth, self.login_manager, "kerberos", app.config
+            )
 
     def test_init_auth_simple_bind_missing_credentials(self):
-        with (
-            patch.object(cts.auth.conf, "auth_ldap_bind_mechanism", "simple"),
-            patch.object(cts.auth.conf, "auth_ldap_bind_dn", ""),
-            patch.object(cts.auth.conf, "auth_ldap_bind_password", ""),
+        with patch.dict(
+            app.config,
+            {
+                "AUTH_LDAP_BIND_MECHANISM": "simple",
+                "AUTH_LDAP_BIND_DN": "",
+                "AUTH_LDAP_BIND_PASSWORD": "",
+            },
         ):
-            self.assertRaises(ValueError, init_auth, self.login_manager, "kerberos")
+            self.assertRaises(
+                ValueError, init_auth, self.login_manager, "kerberos", app.config
+            )
 
 
 class TestDecoratorRequireScopes(unittest.TestCase):
     """Test decorator require_scopes"""
 
-    @patch.object(conf, "oidc_base_namespace", new="http://example.com/")
-    @patch.object(conf, "auth_backend", new="openidc")
+    @patch.dict(
+        app.config,
+        {"OIDC_BASE_NAMESPACE": "http://example.com/", "AUTH_BACKEND": "openidc"},
+    )
     def test_function_is_called(self):
         with app.test_request_context():
             flask.g.oidc_scopes = ["http://example.com/renew-compose"]
@@ -495,8 +518,10 @@ class TestDecoratorRequireScopes(unittest.TestCase):
 
         mock_func.assert_called_once_with(1, 2, 3)
 
-    @patch.object(conf, "oidc_base_namespace", new="http://example.com/")
-    @patch.object(conf, "auth_backend", new="openidc")
+    @patch.dict(
+        app.config,
+        {"OIDC_BASE_NAMESPACE": "http://example.com/", "AUTH_BACKEND": "openidc"},
+    )
     def test_function_is_not_called_if_scope_is_not_present(self):
         with app.test_request_context():
             flask.g.oidc_scopes = [
@@ -509,8 +534,10 @@ class TestDecoratorRequireScopes(unittest.TestCase):
             decorated_func = require_scopes("delete-compose")(mock_func)
             self.assertRaises(Forbidden, decorated_func, 1, 2, 3)
 
-    @patch.object(conf, "oidc_base_namespace", new="http://example.com/")
-    @patch.object(conf, "auth_backend", new="kerberos")
+    @patch.dict(
+        app.config,
+        {"OIDC_BASE_NAMESPACE": "http://example.com/", "AUTH_BACKEND": "kerberos"},
+    )
     def test_function_is_called_for_non_openidc_backend(self):
         with app.test_request_context():
             flask.g.oidc_scopes = [

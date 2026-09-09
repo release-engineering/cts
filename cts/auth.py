@@ -31,38 +31,46 @@ from itertools import chain
 
 from flask import g
 
+from logging import getLogger
+
+from flask import current_app
 from werkzeug.exceptions import Unauthorized
-from cts import conf, log
+
 from cts.errors import Forbidden
 from cts.models import User
 from cts.models import commit_on_success
 
+log = getLogger(__name__)
 
-def _validate_kerberos_config():
+
+def _validate_kerberos_config(config):
     """
     Validates the kerberos configuration and raises ValueError in case of
     error.
+
+    :param config: a dict-like object (e.g. ``app.config``) with the LDAP
+        settings used by kerberos authentication.
     """
     errors = []
-    if not conf.auth_ldap_server:
+    if not config.get("AUTH_LDAP_SERVER"):
         errors.append(
             "kerberos authentication enabled with no LDAP server configured, "
             "check AUTH_LDAP_SERVER in your config."
         )
 
-    if not conf.auth_ldap_groups:
+    if not config.get("AUTH_LDAP_GROUPS"):
         errors.append(
             "kerberos authentication enabled with no LDAP group base configured, "
             "check AUTH_LDAP_GROUPS in your config."
         )
 
-    bind_mechanism = conf.auth_ldap_bind_mechanism
+    bind_mechanism = config.get("AUTH_LDAP_BIND_MECHANISM", "gssapi")
     if bind_mechanism == "simple":
-        if not conf.auth_ldap_bind_dn:
+        if not config.get("AUTH_LDAP_BIND_DN"):
             errors.append(
                 "LDAP simple bind requires AUTH_LDAP_BIND_DN to be configured."
             )
-        if not conf.auth_ldap_bind_password:
+        if not config.get("AUTH_LDAP_BIND_PASSWORD"):
             errors.append(
                 "LDAP simple bind requires AUTH_LDAP_BIND_PASSWORD to be configured."
             )
@@ -79,14 +87,18 @@ def _configure_ldap_client(client):
 
 
 def _bind_ldap_client(client):
-    mechanism = conf.auth_ldap_bind_mechanism
+    config = current_app.config
+    mechanism = config.get("AUTH_LDAP_BIND_MECHANISM", "gssapi")
     if mechanism == "none":
         return
     if mechanism == "gssapi":
         client.sasl_gssapi_bind_s()
         return
     if mechanism == "simple":
-        client.simple_bind_s(conf.auth_ldap_bind_dn, conf.auth_ldap_bind_password)
+        client.simple_bind_s(
+            config.get("AUTH_LDAP_BIND_DN", ""),
+            config.get("AUTH_LDAP_BIND_PASSWORD", ""),
+        )
         return
 
 
@@ -168,12 +180,13 @@ def query_ldap_groups(uid):
     :rtype: List[str].
     """
 
-    client = ldap.initialize(conf.auth_ldap_server)
+    config = current_app.config
+    client = ldap.initialize(config["AUTH_LDAP_SERVER"])
     _configure_ldap_client(client)
     groups = []
     try:
         _bind_ldap_client(client)
-        for ldap_base, ldap_filter in conf.auth_ldap_groups:
+        for ldap_base, ldap_filter in config["AUTH_LDAP_GROUPS"]:
             groups.extend(
                 client.search_s(
                     ldap_base,
@@ -243,7 +256,7 @@ def load_oidc_or_krb_user_from_request(request):
 @commit_on_success
 def load_anonymous_user(request):
     """Set anonymous user for "noauth" backend."""
-    if conf.auth_backend != "noauth":
+    if current_app.config.get("AUTH_BACKEND") != "noauth":
         raise Unauthorized("Anonymous login is enabled only for 'noauth' backend.")
     username = "anonymous"
     user = User.find_user_by_name(username)
@@ -262,7 +275,7 @@ def validate_scopes(scope):
     :raises: Unauthorized if any of required scopes is not present.
     """
     scopes = scope.split(" ")
-    required_scopes = conf.auth_openidc_required_scopes
+    required_scopes = current_app.config.get("AUTH_OPENIDC_REQUIRED_SCOPES", [])
     for scope in required_scopes:
         if scope not in scopes:
             raise Unauthorized("Required OIDC scope {0} not present.".format(scope))
@@ -270,8 +283,13 @@ def validate_scopes(scope):
 
 def require_oidc_scope(scope):
     """Check if required scopes is in OIDC scopes within request"""
-    full_scope = "{0}{1}".format(conf.oidc_base_namespace, scope)
-    if conf.auth_backend == "openidc" and full_scope not in g.oidc_scopes:
+    full_scope = "{0}{1}".format(
+        current_app.config.get("OIDC_BASE_NAMESPACE", ""), scope
+    )
+    if (
+        current_app.config.get("AUTH_BACKEND") == "openidc"
+        and full_scope not in g.oidc_scopes
+    ):
         return False
     else:
         return True
@@ -283,7 +301,7 @@ def require_scopes(*scopes):
     def wrapper(f):
         @wraps(f)
         def decorator(*args, **kwargs):
-            if conf.auth_backend != "noauth":
+            if current_app.config.get("AUTH_BACKEND") != "noauth":
                 for scope in scopes:
                     if not require_oidc_scope(scope):
                         message = "Request does not have required scope %s" % scope
@@ -299,7 +317,11 @@ def require_scopes(*scopes):
 def get_user_info(token):
     """Query FAS groups from Fedora"""
     headers = {"authorization": "Bearer {0}".format(token)}
-    r = requests.get(conf.auth_openidc_userinfo_uri, headers=headers, timeout=5)
+    r = requests.get(
+        current_app.config.get("AUTH_OPENIDC_USERINFO_URI", ""),
+        headers=headers,
+        timeout=5,
+    )
     if r.status_code != 200:
         # In Fedora, the manually created service tokens can't be used with the UserInfo
         # endpoint. We treat this as an empty response - and hence an empty group list. An empty
@@ -314,11 +336,14 @@ def get_user_info(token):
     return r.json()
 
 
-def init_auth(login_manager, backend):
-    """Initialize authentication backend
+def init_auth(login_manager, backend, config):
+    """Initialize authentication backend.
 
     Enable and initialize authentication backend to work with frontend
     authentication module running in Apache.
+
+    :param config: a dict-like object (e.g. ``app.config``) used to
+        validate kerberos/LDAP settings at startup.
     """
     if backend == "noauth":
         # Do not enable any authentication backend working with frontend
@@ -328,7 +353,7 @@ def init_auth(login_manager, backend):
         load_anonymous_user = login_manager.request_loader(load_anonymous_user)
         return
     if backend == "kerberos":
-        _validate_kerberos_config()
+        _validate_kerberos_config(config)
         global load_krb_user_from_request
         load_krb_user_from_request = login_manager.request_loader(
             load_krb_user_from_request
@@ -337,13 +362,13 @@ def init_auth(login_manager, backend):
         global load_openidc_user
         load_openidc_user = login_manager.request_loader(load_openidc_user)
     elif backend == "kerberos_or_ssl":
-        _validate_kerberos_config()
+        _validate_kerberos_config(config)
         global load_krb_or_ssl_user_from_request
         load_krb_or_ssl_user_from_request = login_manager.request_loader(
             load_krb_or_ssl_user_from_request
         )
     elif backend == "oidc_or_kerberos":
-        _validate_kerberos_config()
+        _validate_kerberos_config(config)
         global load_oidc_or_krb_user_from_request
         load_oidc_or_krb_user_from_request = login_manager.request_loader(
             load_oidc_or_krb_user_from_request
@@ -363,15 +388,17 @@ def has_role(role):
 
     :returns: bool
     """
-    if conf.auth_backend == "noauth":
+    config = current_app.config
+    if config.get("AUTH_BACKEND") == "noauth":
         return True
 
+    role_config = config.get(role.upper(), {})
     groups = []
-    for group in getattr(conf, role).get("groups", []):
+    for group in role_config.get("groups", []):
         groups.append(group)
 
     users = []
-    for user in getattr(conf, role).get("users", []):
+    for user in role_config.get("users", []):
         users.append(user)
 
     in_groups = bool(set(flask.g.groups) & set(groups))

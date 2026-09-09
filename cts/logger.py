@@ -63,18 +63,18 @@ def str_to_log_level(level):
     return levels[level]
 
 
-def init_logging(conf):
+def init_logging(config):
     """
     Initializes logging according to configuration file.
     """
     log_format = "%(asctime)s - %(threadName)s - %(name)s - %(levelname)s - %(message)s"
+    log_file = config.get("LOG_FILE", "")
+    log_level = config.get("LOG_LEVEL", logging.NOTSET)
 
-    if conf.log_file:
-        logging.basicConfig(
-            filename=conf.log_file, level=conf.log_level, format=log_format
-        )
-        log = logging.getLogger()
+    if log_file:
+        logging.basicConfig(filename=log_file, level=log_level, format=log_format)
+        logging.getLogger()
     else:
-        logging.basicConfig(level=conf.log_level, format=log_format)
+        logging.basicConfig(level=log_level, format=log_format)
         log = logging.getLogger()
-        log.setLevel(conf.log_level)
+        log.setLevel(log_level)

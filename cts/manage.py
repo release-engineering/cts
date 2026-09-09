@@ -31,7 +31,9 @@ from flask import current_app
 from flask.cli import FlaskGroup
 from werkzeug.serving import run_simple
 
-from cts import create_app, db, models
+import cts.models as models
+from cts import create_app
+from cts.extensions import db
 
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 5005

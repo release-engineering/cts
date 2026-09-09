@@ -28,7 +28,7 @@ from flask_login import UserMixin
 from productmd import ComposeInfo
 from datetime import datetime
 
-from cts import db
+from cts.extensions import db
 from cts.events import cache_composes_if_state_changed
 from cts.events import start_to_publish_messages
 

@@ -29,13 +29,12 @@ from apispec.ext.marshmallow import MarshmallowPlugin
 from apispec_webframeworks.flask import FlaskPlugin
 from productmd import ComposeInfo
 from flask.views import MethodView, View
-from flask import Blueprint, render_template, request, jsonify, g, Response
+from flask import Blueprint, render_template, request, jsonify, g, Response, current_app
 from flask_login import login_required
 from marshmallow import Schema, fields
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from sqlalchemy.exc import IntegrityError
 
-from cts import conf
 from cts._version import version
 from cts.extensions import db
 from cts.errors import NotFound, Forbidden
@@ -678,15 +677,18 @@ class AboutAPI(MethodView):
                     allowed_builders:
                       type: object
         """
+        config = current_app.config
         json = {"version": version}
-        config_items = ["auth_backend", "allowed_builders"]
+        config_items = ["AUTH_BACKEND", "ALLOWED_BUILDERS"]
         for item in config_items:
-            config_item = getattr(conf, item)
+            config_item = config.get(item)
             # All config items have a default, so if doesn't exist it is
             # an error
             if config_item is None:
-                raise ValueError('An invalid config item of "%s" was specified' % item)
-            json[item] = config_item
+                raise ValueError(
+                    'An invalid config item of "%s" was specified' % item.lower()
+                )
+            json[item.lower()] = config_item
         return jsonify(json), 200
 
 
@@ -1129,28 +1131,29 @@ class UserInfoAPI(MethodView):
                           type: array of tag names
         """
         # While using openidc auth backend, it's required in the desired scope.
+        auth_backend = current_app.config.get("AUTH_BACKEND", "")
         in_new_compose_scope = any(
             [
-                conf.auth_backend != "openidc",
-                conf.auth_backend == "openidc" and require_oidc_scope("new-compose"),
+                auth_backend != "openidc",
+                auth_backend == "openidc" and require_oidc_scope("new-compose"),
             ]
         )
         in_edit_compose_scope = any(
             [
-                conf.auth_backend != "openidc",
-                conf.auth_backend == "openidc" and require_oidc_scope("edit-compose"),
+                auth_backend != "openidc",
+                auth_backend == "openidc" and require_oidc_scope("edit-compose"),
             ]
         )
         in_new_tag_scope = any(
             [
-                conf.auth_backend != "openidc",
-                conf.auth_backend == "openidc" and require_oidc_scope("new-tag"),
+                auth_backend != "openidc",
+                auth_backend == "openidc" and require_oidc_scope("new-tag"),
             ]
         )
         in_edit_tag_scope = any(
             [
-                conf.auth_backend != "openidc",
-                conf.auth_backend == "openidc" and require_oidc_scope("edit-tag"),
+                auth_backend != "openidc",
+                auth_backend == "openidc" and require_oidc_scope("edit-tag"),
             ]
         )
         is_admin = has_role("admins")

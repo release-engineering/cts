@@ -106,218 +106,37 @@ def init_config(app, config_section=None):
             "Configuration section {} was not found.".format(config_section)
         )
 
-    conf = Config(config_section_obj)
     app.config.from_object(config_section_obj)
-    return conf
+    _apply_defaults(app.config)
+    _validate_config(app.config)
 
 
-class Config(object):
-    """Class representing the CTS configuration."""
+_CONFIG_DEFAULTS = {
+    "ADMINS": {"groups": [], "users": []},
+    "ALLOWED_BUILDERS": {"groups": {}, "users": {}},
+    "OIDC_BASE_NAMESPACE": "https://pagure.io/cts/",
+    "MESSAGING_TOPIC_PREFIX": "cts.",
+}
 
-    _defaults = {
-        "debug": {"type": bool, "default": False, "desc": "Debug mode"},
-        "log_file": {"type": str, "default": "", "desc": "Path to log file"},
-        "log_level": {"type": str, "default": 0, "desc": "Log level"},
-        "admins": {
-            "type": dict,
-            "default": {"groups": [], "users": []},
-            "desc": "Admin groups and users.",
-        },
-        "allowed_builders": {
-            "type": dict,
-            "default": {"groups": {}, "users": {}},
-            "desc": "Groups and users that are allowed to add new composes.",
-        },
-        "auth_backend": {
-            "type": str,
-            "default": "",
-            "desc": "Select which authentication backend is enabled and work "
-            "with frond-end authentication together.",
-        },
-        "auth_openidc_userinfo_uri": {
-            "type": str,
-            "default": "",
-            "desc": "UserInfo endpoint to get user information from FAS.",
-        },
-        "auth_openidc_required_scopes": {
-            "type": list,
-            "default": [],
-            "desc": "Required scopes for submitting request to run new compose.",
-        },
-        "auth_ldap_server": {
-            "type": str,
-            "default": "",
-            "desc": "Server URL to query user's groups.",
-        },
-        "auth_ldap_groups": {
-            "type": list,
-            "default": [],
-            "desc": "List of pairs (search base, filter pattern) to query user's groups from LDAP server.",
-        },
-        "auth_ldap_bind_mechanism": {
-            "type": str,
-            "default": "gssapi",
-            "desc": "LDAP bind mechanism: gssapi, simple, or none.",
-        },
-        "auth_ldap_bind_dn": {
-            "type": str,
-            "default": "",
-            "desc": "Bind DN for LDAP simple authentication.",
-        },
-        "auth_ldap_bind_password": {
-            "type": str,
-            "default": "",
-            "desc": "Bind password for LDAP simple authentication.",
-        },
-        "messaging_backend": {
-            "type": str,
-            "default": "",
-            "desc": "Messaging backend, kafka or rhmsg.",
-        },
-        "messaging_broker_urls": {
-            "type": list,
-            "default": [],
-            "desc": "List of messaging broker URLs.",
-        },
-        "messaging_cert_file": {
-            "type": str,
-            "default": "",
-            "desc": "Path to certificate file used to authenticate CTS by broker.",
-        },
-        "messaging_key_file": {
-            "type": str,
-            "default": "",
-            "desc": "Path to private key file used to authenticate CTS by broker.",
-        },
-        "messaging_ca_cert": {
-            "type": str,
-            "default": "",
-            "desc": "Path to trusted CA certificate bundle.",
-        },
-        "messaging_kafka_username": {
-            "type": str,
-            "default": "",
-            "desc": "Username for Kafka authentication.",
-        },
-        "messaging_kafka_password": {
-            "type": str,
-            "default": "",
-            "desc": "Password for Kafka authentication.",
-        },
-        "messaging_kafka_security_protocol": {
-            "type": str,
-            "default": "SASL_SSL",
-            "desc": "Kafka security protocol (e.g. SASL_SSL, SSL, PLAINTEXT).",
-        },
-        "messaging_kafka_sasl_mechanism": {
-            "type": str,
-            "default": "SCRAM-SHA-512",
-            "desc": "Kafka SASL mechanism (e.g. SCRAM-SHA-512, PLAIN).",
-        },
-        "messaging_kafka_compression_type": {
-            "type": str,
-            "default": "snappy",
-            "desc": "Kafka message compression type (e.g. snappy, gzip, lz4, none).",
-        },
-        "messaging_topic_prefix": {
-            "type": str,
-            "default": "cts.",
-            "desc": "Prefix for messaging topics.",
-        },
-        "oidc_base_namespace": {
-            "type": str,
-            "default": "https://pagure.io/cts/",
-            "desc": "Base namespace of OIDC scopes.",
-        },
-    }
 
-    def __init__(self, conf_section_obj):
-        """
-        Initialize the Config object with defaults and then override them
-        with runtime values.
-        """
+def _apply_defaults(config):
+    for key, default in _CONFIG_DEFAULTS.items():
+        config.setdefault(key, default)
+    config.setdefault("LOGIN_DISABLED", config.get("AUTH_BACKEND") in ("noauth", ""))
+    raw_level = config.get("LOG_LEVEL")
+    if isinstance(raw_level, str):
+        config["LOG_LEVEL"] = logger.str_to_log_level(raw_level.lower())
+    if config.get("LOG_FILE") is None:
+        config["LOG_FILE"] = ""
 
-        # read items from conf and set
-        for key in dir(conf_section_obj):
-            # skip keys starting with underscore
-            if key.startswith("_"):
-                continue
-            # set item (lower key)
-            self.set_item(key.lower(), getattr(conf_section_obj, key))
 
-        # set item from defaults if the item is not set
-        for name, values in self._defaults.items():
-            if hasattr(self, name):
-                continue
-            self.set_item(name, values["default"])
-
-        # Used by Flask-Login to disable the @login_required decorator
-        self.login_disabled = self.auth_backend == "noauth"
-
-    def set_item(self, key, value):
-        """
-        Set value for configuration item. Creates the self._key = value
-        attribute and self.key property to set/get/del the attribute.
-        """
-        if key == "set_item" or key.startswith("_"):
-            raise Exception("Configuration item's name is not allowed: %s" % key)
-
-        # Create the empty self._key attribute, so we can assign to it.
-        setattr(self, "_" + key, None)
-
-        # Create self.key property to access the self._key attribute.
-        # Use the setifok_func if available for the attribute.
-        setifok_func = "_setifok_{}".format(key)
-        if hasattr(self, setifok_func):
-            setx = lambda self, val: getattr(self, setifok_func)(val)
-        else:
-            setx = lambda self, val: setattr(self, "_" + key, val)
-        getx = lambda self: getattr(self, "_" + key)
-        delx = lambda self: delattr(self, "_" + key)
-        setattr(Config, key, property(getx, setx, delx))
-
-        # managed/registered configuration items
-        if key in self._defaults:
-            # type conversion for configuration item
-            convert = self._defaults[key]["type"]
-            if convert in [bool, int, list, str, set, dict, float]:
-                try:
-                    # Do no try to convert None...
-                    if value is not None:
-                        value = convert(value)
-                except Exception:
-                    raise TypeError(
-                        "Configuration value conversion failed for name: %s" % key
-                    )
-            # unknown type/unsupported conversion
-            elif convert is not None:
-                raise TypeError(
-                    "Unsupported type %s for configuration item name: %s"
-                    % (convert, key)
-                )
-
-        # Set the attribute to the correct value
-        setattr(self, key, value)
-
-    #
-    # Register your _setifok_* handlers here
-    #
-
-    def _setifok_log_file(self, s):
-        if s is None:
-            self._log_file = ""
-        else:
-            self._log_file = str(s)
-
-    def _setifok_log_level(self, s):
-        level = str(s).lower()
-        self._log_level = logger.str_to_log_level(level)
-
-    def _setifok_auth_ldap_bind_mechanism(self, s):
-        mechanism = str(s).lower()
-        if mechanism not in ("gssapi", "simple", "none"):
-            raise ValueError(
-                "Unsupported LDAP bind mechanism %r, supported values: "
-                "gssapi, simple, none." % mechanism
-            )
-        self._auth_ldap_bind_mechanism = mechanism
+def _validate_config(config):
+    mechanism = config.get("AUTH_LDAP_BIND_MECHANISM", "gssapi")
+    if isinstance(mechanism, str):
+        mechanism = mechanism.lower()
+        config["AUTH_LDAP_BIND_MECHANISM"] = mechanism
+    if mechanism not in ("gssapi", "simple", "none"):
+        raise ValueError(
+            "Unsupported LDAP bind mechanism %r, supported values: "
+            "gssapi, simple, none." % mechanism
+        )

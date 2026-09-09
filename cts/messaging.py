@@ -27,7 +27,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
 
-from cts import conf
+from flask import current_app
 
 log = getLogger(__name__)
 
@@ -37,19 +37,27 @@ __all__ = ("publish",)
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cts-messaging")
 
 
-def publish(msgs):
+def _snapshot_messaging_config(config):
+    """Capture all MESSAGING_* keys into a plain dict for background threads."""
+    return {k: v for k, v in config.items() if k.startswith("MESSAGING_")}
+
+
+def publish(msgs, config=None):
     """
     Publish messages to message broker asynchronously.
 
     Messages are published in a background thread to avoid blocking HTTP requests.
     Failures are logged but do not prevent the HTTP response from being sent.
     """
-    backend = _get_messaging_backend()
+    if config is None:
+        config = current_app.config
+    msg_conf = _snapshot_messaging_config(config)
+    backend = _get_messaging_backend(msg_conf)
     if backend is not None:
 
         def _send():
             try:
-                backend(msgs)
+                backend(msgs, msg_conf)
             except Exception:
                 log.exception("Failed to publish messages to message broker.")
 
@@ -125,7 +133,7 @@ def _shutdown_messaging():
     _close_kafka_producer(flush=True)
 
 
-def _get_kafka_producer():
+def _get_kafka_producer(msg_conf):
     """Get or create a long-lived Kafka producer.
 
     The producer is created lazily on first use and reused for subsequent
@@ -136,14 +144,18 @@ def _get_kafka_producer():
         from kafka import KafkaProducer
 
         _kafka_producer = KafkaProducer(
-            bootstrap_servers=conf.messaging_broker_urls,
+            bootstrap_servers=msg_conf.get("MESSAGING_BROKER_URLS", []),
             compression_type=_normalize_kafka_compression(
-                conf.messaging_kafka_compression_type
+                msg_conf.get("MESSAGING_KAFKA_COMPRESSION_TYPE", "snappy")
             ),
-            security_protocol=conf.messaging_kafka_security_protocol,
-            sasl_mechanism=conf.messaging_kafka_sasl_mechanism,
-            sasl_plain_username=conf.messaging_kafka_username,
-            sasl_plain_password=conf.messaging_kafka_password,
+            security_protocol=msg_conf.get(
+                "MESSAGING_KAFKA_SECURITY_PROTOCOL", "SASL_SSL"
+            ),
+            sasl_mechanism=msg_conf.get(
+                "MESSAGING_KAFKA_SASL_MECHANISM", "SCRAM-SHA-512"
+            ),
+            sasl_plain_username=msg_conf.get("MESSAGING_KAFKA_USERNAME", ""),
+            sasl_plain_password=msg_conf.get("MESSAGING_KAFKA_PASSWORD", ""),
             value_serializer=lambda v: json.dumps(v).encode("utf-8"),
         )
     return _kafka_producer
@@ -152,7 +164,7 @@ def _get_kafka_producer():
 atexit.register(_shutdown_messaging)
 
 
-def _kafka_send_msg(msgs):
+def _kafka_send_msg(msgs, msg_conf):
     """Send messages to Kafka.
 
     Uses a persistent producer that is reused across calls. Retries are handled
@@ -160,13 +172,15 @@ def _kafka_send_msg(msgs):
     be logged by the caller.
 
     :param list[dict] msgs: List of messages to be sent.
+    :param dict msg_conf: Snapshot of MESSAGING_* config keys.
     :raises Exception: If messages cannot be delivered after kafka-python retries
     """
     try:
-        producer = _get_kafka_producer()
+        producer = _get_kafka_producer(msg_conf)
+        topic_prefix = msg_conf.get("MESSAGING_TOPIC_PREFIX", "cts.")
         for msg in msgs:
             event = msg.get("event", "event")
-            topic = "%s%s" % (conf.messaging_topic_prefix, event)
+            topic = "%s%s" % (topic_prefix, event)
             producer.send(topic, msg)
         producer.flush()
     except Exception:
@@ -174,7 +188,7 @@ def _kafka_send_msg(msgs):
         raise
 
 
-def _umb_send_msg(msgs):
+def _umb_send_msg(msgs, msg_conf):
     """Send message to Unified Message Bus with retry logic"""
 
     import proton
@@ -182,16 +196,17 @@ def _umb_send_msg(msgs):
 
     def _send():
         """Inner function to send messages (will be retried on failure)"""
-        config = {
-            "urls": conf.messaging_broker_urls,
-            "certificate": conf.messaging_cert_file,
-            "private_key": conf.messaging_key_file,
-            "trusted_certificates": conf.messaging_ca_cert,
+        amq_config = {
+            "urls": msg_conf.get("MESSAGING_BROKER_URLS", []),
+            "certificate": msg_conf.get("MESSAGING_CERT_FILE", ""),
+            "private_key": msg_conf.get("MESSAGING_KEY_FILE", ""),
+            "trusted_certificates": msg_conf.get("MESSAGING_CA_CERT", ""),
         }
-        with AMQProducer(**config) as producer:
+        topic_prefix = msg_conf.get("MESSAGING_TOPIC_PREFIX", "cts.")
+        with AMQProducer(**amq_config) as producer:
             for msg in msgs:
                 event = msg.get("event", "event")
-                topic = "%s%s" % (conf.messaging_topic_prefix, event)
+                topic = "%s%s" % (topic_prefix, event)
                 producer.through_topic(topic)
                 outgoing_msg = proton.Message()
                 outgoing_msg.body = json.dumps(msg)
@@ -201,12 +216,13 @@ def _umb_send_msg(msgs):
     _retry_with_backoff(_send)
 
 
-def _get_messaging_backend():
-    if conf.messaging_backend == "kafka":
+def _get_messaging_backend(msg_conf):
+    backend = msg_conf.get("MESSAGING_BACKEND", "")
+    if backend == "kafka":
         return _kafka_send_msg
-    elif conf.messaging_backend == "rhmsg":
+    elif backend == "rhmsg":
         return _umb_send_msg
-    elif conf.messaging_backend:
-        raise ValueError("Unknown messaging backend {0}".format(conf.messaging_backend))
+    elif backend:
+        raise ValueError("Unknown messaging backend {0}".format(backend))
     else:
         return None
