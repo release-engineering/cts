@@ -29,7 +29,7 @@ from apispec.ext.marshmallow import MarshmallowPlugin
 from apispec_webframeworks.flask import FlaskPlugin
 from productmd import ComposeInfo
 from flask.views import MethodView, View
-from flask import render_template, request, jsonify, g, Response
+from flask import Blueprint, render_template, request, jsonify, g, Response
 from flask_login import login_required
 from marshmallow import Schema, fields
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -1192,82 +1192,43 @@ class APIDoc(View):
         return render_template("apidoc.html")
 
 
-def register_api_v1(app):
-    """Registers version 1 of CTS API."""
-    api_v1 = {
-        "composes": {
-            "url": "/api/1/composes/",
-            "options": {
-                "methods": ["GET", "POST"],
-            },
-            "view_class": ComposesListAPI,
-        },
-        "composedetail": {
-            "url": "/api/1/composes/<id>",
-            "options": {
-                "methods": ["GET", "PATCH"],
-            },
-            "view_class": ComposeDetailAPI,
-        },
-        "composechanges": {
-            "url": "/api/1/composes/<id>/changes/",
-            "options": {
-                "methods": ["GET"],
-            },
-            "view_class": ComposeChangesAPI,
-        },
-        "tags": {
-            "url": "/api/1/tags/",
-            "options": {
-                "methods": ["GET", "POST"],
-            },
-            "view_class": TagsListAPI,
-        },
-        "tagdetail": {
-            "url": "/api/1/tags/<id>",
-            "options": {
-                "methods": ["GET", "PATCH"],
-            },
-            "view_class": TagDetailAPI,
-        },
-        "tagchanges": {
-            "url": "/api/1/tags/<id>/changes/",
-            "options": {
-                "methods": ["GET"],
-            },
-            "view_class": TagChangesAPI,
-        },
-        "repo": {
-            "url": "/api/1/composes/<id>/repo/",
-            "options": {
-                "methods": ["GET"],
-            },
-            "view_class": RepoAPI,
-        },
-        "userinfo": {
-            "url": "/api/1/userinfo",
-            "options": {"methods": ["GET"]},
-            "view_class": UserInfoAPI,
-        },
-        "metrics": {
-            "url": "/api/1/metrics/",
-            "options": {"methods": ["GET"]},
-            "view_class": MetricsAPI,
-        },
-        "about": {
-            "url": "/api/1/about/",
-            "options": {"methods": ["GET"]},
-            "view_class": AboutAPI,
-        },
-    }
+api_v1 = Blueprint("api_v1", __name__, url_prefix="/api/1")
 
-    for key, val in api_v1.items():
-        view_func = val["view_class"].as_view(key)
-        app.add_url_rule(
-            val["url"], endpoint=key, view_func=view_func, **val["options"]
-        )
-        with app.test_request_context():
-            app.openapispec.path(view=view_func)
+api_v1.add_url_rule("/", view_func=APIDoc.as_view("apidoc"))
+api_v1.add_url_rule(
+    "/composes/", view_func=ComposesListAPI.as_view("composes"), methods=["GET", "POST"]
+)
+api_v1.add_url_rule(
+    "/composes/<id>",
+    view_func=ComposeDetailAPI.as_view("composedetail"),
+    methods=["GET", "PATCH"],
+)
+api_v1.add_url_rule(
+    "/composes/<id>/changes/",
+    view_func=ComposeChangesAPI.as_view("composechanges"),
+    methods=["GET"],
+)
+api_v1.add_url_rule(
+    "/composes/<id>/repo/", view_func=RepoAPI.as_view("repo"), methods=["GET"]
+)
+api_v1.add_url_rule(
+    "/tags/", view_func=TagsListAPI.as_view("tags"), methods=["GET", "POST"]
+)
+api_v1.add_url_rule(
+    "/tags/<id>", view_func=TagDetailAPI.as_view("tagdetail"), methods=["GET", "PATCH"]
+)
+api_v1.add_url_rule(
+    "/tags/<id>/changes/",
+    view_func=TagChangesAPI.as_view("tagchanges"),
+    methods=["GET"],
+)
+api_v1.add_url_rule(
+    "/userinfo", view_func=UserInfoAPI.as_view("userinfo"), methods=["GET"]
+)
+api_v1.add_url_rule(
+    "/metrics/", view_func=MetricsAPI.as_view("metrics"), methods=["GET"]
+)
+api_v1.add_url_rule("/about/", view_func=AboutAPI.as_view("about"), methods=["GET"])
 
 
 def register_views(app):
@@ -1280,5 +1241,10 @@ def register_views(app):
     )
 
     app.add_url_rule("/", view_func=Index.as_view("index"))
-    app.add_url_rule("/api/1/", view_func=APIDoc.as_view("apidoc"))
-    register_api_v1(app)
+    app.register_blueprint(api_v1)
+
+    with app.test_request_context():
+        for rule in app.url_map.iter_rules():
+            if rule.endpoint.startswith("api_v1."):
+                view_func = app.view_functions[rule.endpoint]
+                app.openapispec.path(view=view_func)
