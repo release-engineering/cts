@@ -40,7 +40,7 @@ _DEFAULT_PORT = 5005
 
 
 def _cli_config_section():
-    return os.environ.get("CTS_CONFIG_SECTION", "CronJobConfiguration")
+    return os.environ.get("CTS_CONFIG_SECTION")
 
 
 def _web_config_section():
