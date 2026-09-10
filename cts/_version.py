@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
-import pkg_resources
+from importlib.metadata import PackageNotFoundError, version as _version
 
 try:
-    version = pkg_resources.get_distribution("cts").version
-except pkg_resources.DistributionNotFound:
+    version = _version("cts")
+except PackageNotFoundError:
     version = "unknown"
