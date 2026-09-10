@@ -73,7 +73,6 @@ def init_logging(config):
 
     if log_file:
         logging.basicConfig(filename=log_file, level=log_level, format=log_format)
-        logging.getLogger()
     else:
         logging.basicConfig(level=log_level, format=log_format)
         log = logging.getLogger()
