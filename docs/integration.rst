@@ -84,9 +84,9 @@ Point pytest at an existing deployment::
 
 Use ``-o addopts=`` to disable the default coverage options from ``tox.ini``.
 
-``tests/conftest.py`` bootstraps ``create_app(mode="full")`` for unit tests only
-(when ``CTS_URL`` is unset). Integration runs set ``CTS_URL`` so the test runner
-does not need the ``cts`` package or Flask dependencies.
+``tests/conftest.py`` bootstraps ``create_app()`` for unit tests only (when
+``CTS_URL`` is unset). Integration runs set ``CTS_URL`` so the test runner does
+not need the ``cts`` package or Flask dependencies.
 
 Adding tests
 ============
