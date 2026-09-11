@@ -113,7 +113,7 @@ def init_config(app, config_section=None):
 
 _CONFIG_DEFAULTS = {
     "ADMINS": {"groups": [], "users": []},
-    "ALLOWED_BUILDERS": {"groups": {}, "users": {}},
+    "ALLOWED_BUILDERS": {"groups": [], "users": []},
     "OIDC_BASE_NAMESPACE": "https://pagure.io/cts/",
     "MESSAGING_TOPIC_PREFIX": "cts.",
 }
