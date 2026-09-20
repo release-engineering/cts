@@ -159,32 +159,31 @@ def check_stale_requests(timeout):
 
     from flask import g
 
-    try:
-        timeout_h = timedelta(hours=timeout)
-        logging.info(
-            "Checking stale composes with requested tag within {} hours".format(timeout)
-        )
-        # Get the composes with -requested tag
-        query = models.Compose.query.outerjoin(models.Compose.tags, aliased=True)
-        composes = query.filter(models.Tag.name.contains("requested")).all()
-        system_user = models.User.find_user_by_name(username="SYSTEM")
-        if not system_user:
-            system_user = models.User.create_user(username="SYSTEM")
-            logging.info("New SYSTEM User is created in database.")
-            db.session.commit()
-        g.user = system_user
-        for compose in composes:
+    timeout_h = timedelta(hours=timeout)
+    logging.info(
+        "Checking stale composes with requested tag within {} hours".format(timeout)
+    )
+    # Get the composes with -requested tag
+    query = models.Compose.query.outerjoin(models.Compose.tags, aliased=True)
+    composes = query.filter(models.Tag.name.contains("requested")).all()
+    system_user = models.User.find_user_by_name(username="SYSTEM")
+    if not system_user:
+        system_user = models.User.create_user(username="SYSTEM")
+        logging.info("New SYSTEM User is created in database.")
+        db.session.commit()
+    g.user = system_user
+    for compose in composes:
+        try:
             for retag in compose.retag_stale_composes(g.user.username, timeout_h):
                 logging.info(
                     "Checking compose:{} for tag {} is done".format(
                         compose.id, retag.name
                     )
                 )
-        logging.info("Checking for stale requests is done")
-
-    except BaseException as e:
-        logging.error("Error occured while retagging compose:{}".format(compose.id))
-        raise e
+        except BaseException as e:
+            logging.error("Error occurred while retagging compose:{}".format(compose.id))
+            raise e
+    logging.info("Checking for stale requests is done")
 
 
 @cli.command()
