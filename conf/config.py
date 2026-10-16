@@ -46,6 +46,9 @@ class BaseConfiguration(object):
     AUTH_LDAP_BIND_DN = ""
     AUTH_LDAP_BIND_PASSWORD = ""
 
+    # Timeout in seconds for LDAP network connections and operations.
+    AUTH_LDAP_TIMEOUT = 10
+
     AUTH_OPENIDC_USERINFO_URI = "https://id.fedoraproject.org/openidc/UserInfo"
 
     # Scope requested from Fedora Infra for permission of submitting request to
