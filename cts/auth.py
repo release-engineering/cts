@@ -82,7 +82,15 @@ def _validate_kerberos_config(config):
 
 
 def _configure_ldap_client(client):
+    timeout = current_app.config.get("AUTH_LDAP_TIMEOUT", 10)
     client.set_option(ldap.OPT_REFERRALS, 0)
+    # Bound connect() with OPT_NETWORK_TIMEOUT, and the overall wait of
+    # synchronous calls (bind, search) with OPT_TIMEOUT. Without OPT_TIMEOUT,
+    # a server that accepts the connection but never replies would hang the
+    # request forever. OPT_TIMELIMIT is the server-side search cap.
+    client.set_option(ldap.OPT_NETWORK_TIMEOUT, timeout)
+    client.set_option(ldap.OPT_TIMEOUT, timeout)
+    client.set_option(ldap.OPT_TIMELIMIT, timeout)
     client.protocol_version = ldap.VERSION3
 
 
