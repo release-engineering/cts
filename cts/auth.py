@@ -82,7 +82,10 @@ def _validate_kerberos_config(config):
 
 
 def _configure_ldap_client(client):
+    timeout = current_app.config.get("AUTH_LDAP_TIMEOUT", 10)
     client.set_option(ldap.OPT_REFERRALS, 0)
+    client.set_option(ldap.OPT_NETWORK_TIMEOUT, timeout)
+    client.set_option(ldap.OPT_TIMELIMIT, timeout)
     client.protocol_version = ldap.VERSION3
 
 

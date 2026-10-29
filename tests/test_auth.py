@@ -437,6 +437,26 @@ class TestQueryLdapGroups(unittest.TestCase):
         self.assertEqual([], groups)
         initialize.return_value.unbind_s.assert_called_once_with()
 
+    @patch.dict(
+        app.config,
+        {
+            "AUTH_LDAP_GROUPS": [("ou=Groups,dc=example,dc=com", "memberUid={}")],
+            "AUTH_LDAP_BIND_MECHANISM": "none",
+            "AUTH_LDAP_TIMEOUT": 30,
+        },
+    )
+    @patch("cts.auth.ldap.initialize")
+    def test_timeout_is_configured(self, initialize):
+        initialize.return_value.search_s.return_value = []
+
+        query_ldap_groups("me")
+
+        set_option_calls = [
+            args for args, _ in initialize.return_value.set_option.call_args_list
+        ]
+        self.assertIn((ldap.OPT_NETWORK_TIMEOUT, 30), set_option_calls)
+        self.assertIn((ldap.OPT_TIMELIMIT, 30), set_option_calls)
+
 
 class TestInitAuth(unittest.TestCase):
     """Test init_auth"""

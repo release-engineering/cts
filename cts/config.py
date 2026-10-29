@@ -116,6 +116,7 @@ _CONFIG_DEFAULTS = {
     "ALLOWED_BUILDERS": {"groups": [], "users": []},
     "OIDC_BASE_NAMESPACE": "https://pagure.io/cts/",
     "MESSAGING_TOPIC_PREFIX": "cts.",
+    "AUTH_LDAP_TIMEOUT": 10,
 }
 
 
