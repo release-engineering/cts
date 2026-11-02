@@ -181,7 +181,9 @@ def check_stale_requests(timeout):
                     )
                 )
         except BaseException as e:
-            logging.error("Error occurred while retagging compose:{}".format(compose.id))
+            logging.error(
+                "Error occurred while retagging compose:{}".format(compose.id)
+            )
             raise e
     logging.info("Checking for stale requests is done")
 
