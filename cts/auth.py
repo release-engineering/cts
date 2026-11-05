@@ -181,6 +181,11 @@ def _ldap_error_description(error):
       desc  - short label, e.g. "Can't contact LDAP server"
       info  - diagnostic detail, e.g. "Connection timed out"
     Both are included when present so the full error is visible in logs.
+
+    Some exception subclasses (notably ldap.TIMEOUT) are raised by the C
+    library with no arguments at all, making str(error) an empty string.
+    In that case fall back to the exception class name so the log is never
+    silently blank.
     """
     if error.args and isinstance(error.args[0], dict):
         d = error.args[0]
@@ -188,7 +193,7 @@ def _ldap_error_description(error):
         info = d.get("info", "")
         parts = [p for p in (desc, info) if p]
         return ": ".join(parts) if parts else str(error)
-    return str(error)
+    return str(error) or type(error).__name__
 
 
 def _ldap_server_uris():
