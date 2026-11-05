@@ -526,6 +526,25 @@ class TestQueryLdapGroups(unittest.TestCase):
             _ldap_error_description(error),
         )
 
+    def test_ldap_error_description_no_args_falls_back_to_class_name(self):
+        """LDAPError with no args produces class name, not empty string."""
+        from cts.auth import _ldap_error_description
+
+        # LDAPError subclasses like ldap.TIMEOUT are raised by the C library
+        # with no arguments, making str(err) an empty string. The fallback
+        # must use the class name so the log line is never silently blank.
+        error = ldap.LDAPError()
+        self.assertEqual("LDAPError", _ldap_error_description(error))
+
+    def test_ldap_error_description_timeout_falls_back_to_class_name(self):
+        """ldap.TIMEOUT with no args produces 'TIMEOUT', not empty string."""
+        from cts.auth import _ldap_error_description
+
+        # ldap.TIMEOUT is the most common real-world case: the C library
+        # raises it with empty args when OPT_TIMEOUT fires.
+        error = ldap.TIMEOUT()
+        self.assertEqual("TIMEOUT", _ldap_error_description(error))
+
     @patch.dict(
         app.config,
         {
