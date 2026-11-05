@@ -458,6 +458,92 @@ class TestQueryLdapGroups(unittest.TestCase):
         self.assertIn((ldap.OPT_TIMEOUT, 30), set_option_calls)
         self.assertIn((ldap.OPT_TIMELIMIT, 30), set_option_calls)
 
+    @patch.dict(
+        app.config,
+        {
+            "AUTH_LDAP_SERVER": "ldap://a.example.com ldap://b.example.com",
+            "AUTH_LDAP_GROUPS": [("ou=Groups,dc=example,dc=com", "memberUid={}")],
+            "AUTH_LDAP_BIND_MECHANISM": "none",
+        },
+    )
+    @patch("cts.auth.ldap.initialize")
+    def test_failover_to_next_server_on_error(self, initialize):
+        """First server raises LDAPError; second succeeds; groups from second."""
+        first_client = Mock()
+        first_client.search_s.side_effect = ldap.LDAPError(
+            {"desc": "Can't contact LDAP server", "info": "Connection timed out"}
+        )
+        second_client = Mock()
+        second_client.search_s.return_value = [
+            ("cn=devel,ou=Groups,dc=example,dc=com", {"cn": [b"devel"]}),
+        ]
+        initialize.side_effect = [first_client, second_client]
+
+        groups = query_ldap_groups("me")
+
+        self.assertEqual(["devel"], groups)
+        initialize.assert_any_call("ldap://a.example.com")
+        initialize.assert_any_call("ldap://b.example.com")
+        first_client.unbind_s.assert_called_once_with()
+        second_client.unbind_s.assert_called_once_with()
+
+    @patch.dict(
+        app.config,
+        {
+            "AUTH_LDAP_SERVER": "ldap://a.example.com ldap://b.example.com",
+            "AUTH_LDAP_GROUPS": [("ou=Groups,dc=example,dc=com", "memberUid={}")],
+            "AUTH_LDAP_BIND_MECHANISM": "none",
+        },
+    )
+    @patch("cts.auth.ldap.initialize")
+    def test_returns_empty_list_when_all_servers_fail(self, initialize):
+        """All servers raise LDAPError; returns [] and unbind attempted for each."""
+        first_client = Mock()
+        first_client.search_s.side_effect = ldap.LDAPError(
+            {"desc": "Can't contact LDAP server", "info": "Connection timed out"}
+        )
+        second_client = Mock()
+        second_client.search_s.side_effect = ldap.LDAPError(
+            {"desc": "Can't contact LDAP server", "info": "Connection timed out"}
+        )
+        initialize.side_effect = [first_client, second_client]
+
+        groups = query_ldap_groups("me")
+
+        self.assertEqual([], groups)
+        first_client.unbind_s.assert_called_once_with()
+        second_client.unbind_s.assert_called_once_with()
+
+    def test_ldap_error_description_includes_info_field(self):
+        """_ldap_error_description joins desc and info fields with ': '."""
+        from cts.auth import _ldap_error_description
+
+        error = ldap.LDAPError(
+            {"desc": "Can't contact LDAP server", "info": "Connection timed out"}
+        )
+        self.assertEqual(
+            "Can't contact LDAP server: Connection timed out",
+            _ldap_error_description(error),
+        )
+
+    @patch.dict(
+        app.config,
+        {
+            "AUTH_LDAP_GROUPS": [("ou=Groups,dc=example,dc=com", "memberUid={}")],
+            "AUTH_LDAP_BIND_MECHANISM": "none",
+        },
+    )
+    @patch("cts.auth.ldap.initialize")
+    def test_uid_is_escaped_in_filter(self, initialize):
+        """Special characters in uid are escaped before use in LDAP filter."""
+        initialize.return_value.search_s.return_value = []
+
+        query_ldap_groups("user(1)")
+
+        filterstr = initialize.return_value.search_s.call_args.kwargs["filterstr"]
+        self.assertIn("user\\281\\29", filterstr)
+        self.assertNotIn("user(1)", filterstr)
+
 
 class TestInitAuth(unittest.TestCase):
     """Test init_auth"""

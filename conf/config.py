@@ -27,7 +27,9 @@ class BaseConfiguration(object):
 
     # Used for Kerberos authentication and to query user's groups.
     # Format: ldap://hostname[:port]
-    # For example: ldap://ldap.example.com/
+    # For failover, provide a space-separated list of URIs; CTS will try each
+    # in order and return groups from the first server that responds.
+    # For example: ldap://ldap1.example.com ldap://ldap2.example.com
     AUTH_LDAP_SERVER = ""
 
     # List of (base, filter) pairs to query groups from LDAP server.

@@ -25,6 +25,7 @@
 from functools import wraps
 import requests
 import ldap
+import ldap.filter
 import flask
 
 from itertools import chain
@@ -174,50 +175,94 @@ def load_krb_or_ssl_user_from_request(request):
 
 
 def _ldap_error_description(error):
-    """Return a log-safe description from a python-ldap LDAPError."""
+    """Return a log-safe description from a python-ldap LDAPError.
+
+    LDAPError.args[0] is typically a dict with two keys:
+      desc  - short label, e.g. "Can't contact LDAP server"
+      info  - diagnostic detail, e.g. "Connection timed out"
+    Both are included when present so the full error is visible in logs.
+    """
     if error.args and isinstance(error.args[0], dict):
-        return error.args[0].get("desc", str(error))
+        d = error.args[0]
+        desc = d.get("desc", "")
+        info = d.get("info", "")
+        parts = [p for p in (desc, info) if p]
+        return ": ".join(parts) if parts else str(error)
     return str(error)
 
 
-def query_ldap_groups(uid):
-    """Query user's ldap groups.
+def _ldap_server_uris():
+    """Return the list of individual LDAP server URIs from configuration.
+
+    AUTH_LDAP_SERVER may contain a space-separated list of URIs for failover.
+    We split it here so we can iterate explicitly in Python rather than
+    handing the multi-server string to the OpenLDAP C library.
+    """
+    return current_app.config["AUTH_LDAP_SERVER"].split()
+
+
+def _query_single_ldap_server(uid, server_uri):
+    """Query LDAP groups for uid against a single server URI.
 
     :param str uid: username.
+    :param str server_uri: LDAP server URI, e.g. ``ldap://ldap.example.com``.
     :return: List of group names.
-    :rtype: List[str].
+    :rtype: list[str]
+    :raises ldap.LDAPError: on any LDAP error (connect, bind, or search).
     """
-
     config = current_app.config
-    client = ldap.initialize(config["AUTH_LDAP_SERVER"])
+    client = ldap.initialize(server_uri)
     _configure_ldap_client(client)
     groups = []
     try:
         _bind_ldap_client(client)
+        safe_uid = ldap.filter.escape_filter_chars(uid)
         for ldap_base, ldap_filter in config["AUTH_LDAP_GROUPS"]:
             groups.extend(
                 client.search_s(
                     ldap_base,
                     ldap.SCOPE_ONELEVEL,
                     attrlist=["cn"],
-                    filterstr=ldap_filter.format(uid),
+                    filterstr=ldap_filter.format(safe_uid),
                 )
             )
-    except ldap.LDAPError as e:
-        log.error(
-            "Cannot query groups of %s from LDAP. Error: %s",
-            uid,
-            _ldap_error_description(e),
-        )
-        return groups
     finally:
         try:
             client.unbind_s()
         except ldap.LDAPError:
             pass
 
-    group_names = [g.decode() for g in list(chain(*[info["cn"] for _, info in groups]))]
-    return group_names
+    return [g.decode() for g in list(chain(*[info["cn"] for _, info in groups]))]
+
+
+def query_ldap_groups(uid):
+    """Query user's LDAP groups, trying each configured server in turn.
+
+    Iterates over the URIs in AUTH_LDAP_SERVER (space-separated). On any
+    LDAP error the failure is logged and the next server is tried. Returns
+    the groups from the first server that responds successfully, or an empty
+    list if all servers fail.
+
+    :param str uid: username.
+    :return: List of group names.
+    :rtype: list[str]
+    """
+    for server_uri in _ldap_server_uris():
+        try:
+            return _query_single_ldap_server(uid, server_uri)
+        except ldap.LDAPError as e:
+            log.error(
+                "Cannot query groups of %s from LDAP server %s. Error: %s",
+                uid,
+                server_uri,
+                _ldap_error_description(e),
+            )
+
+    log.error(
+        "All LDAP servers exhausted when querying groups of %s. Returning empty group list.",
+        uid,
+    )
+    return []
 
 
 @commit_on_success
