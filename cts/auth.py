@@ -25,7 +25,10 @@
 from functools import wraps
 import requests
 import ldap
+import ldap.filter
 import flask
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 from itertools import chain
 
@@ -82,7 +85,15 @@ def _validate_kerberos_config(config):
 
 
 def _configure_ldap_client(client):
+    timeout = current_app.config.get("AUTH_LDAP_TIMEOUT", 10)
     client.set_option(ldap.OPT_REFERRALS, 0)
+    # Bound connect() with OPT_NETWORK_TIMEOUT, and the overall wait of
+    # synchronous calls (bind, search) with OPT_TIMEOUT. Without OPT_TIMEOUT,
+    # a server that accepts the connection but never replies would hang the
+    # request forever. OPT_TIMELIMIT is the server-side search cap.
+    client.set_option(ldap.OPT_NETWORK_TIMEOUT, timeout)
+    client.set_option(ldap.OPT_TIMEOUT, timeout)
+    client.set_option(ldap.OPT_TIMELIMIT, timeout)
     client.protocol_version = ldap.VERSION3
 
 
@@ -166,50 +177,108 @@ def load_krb_or_ssl_user_from_request(request):
 
 
 def _ldap_error_description(error):
-    """Return a log-safe description from a python-ldap LDAPError."""
+    """Return a log-safe description from a python-ldap LDAPError.
+
+    LDAPError.args[0] is typically a dict with two keys:
+      desc  - short label, e.g. "Can't contact LDAP server"
+      info  - diagnostic detail, e.g. "Connection timed out"
+    Both are included when present so the full error is visible in logs.
+
+    Some exception subclasses (notably ldap.TIMEOUT) are raised by the C
+    library with no arguments at all, making str(error) an empty string.
+    In that case fall back to the exception class name so the log is never
+    silently blank.
+    """
     if error.args and isinstance(error.args[0], dict):
-        return error.args[0].get("desc", str(error))
-    return str(error)
+        d = error.args[0]
+        desc = d.get("desc", "")
+        info = d.get("info", "")
+        parts = [p for p in (desc, info) if p]
+        return ": ".join(parts) if parts else str(error)
+    return str(error) or type(error).__name__
 
 
-def query_ldap_groups(uid):
-    """Query user's ldap groups.
+def _ldap_server_uris():
+    """Return the list of individual LDAP server URIs from configuration.
+
+    AUTH_LDAP_SERVER may contain a space-separated list of URIs for failover.
+    We split it here so we can iterate explicitly in Python rather than
+    handing the multi-server string to the OpenLDAP C library.
+    """
+    return current_app.config["AUTH_LDAP_SERVER"].split()
+
+
+def _query_single_ldap_server(uid, server_uri):
+    """Query LDAP groups for uid against a single server URI.
 
     :param str uid: username.
+    :param str server_uri: LDAP server URI, e.g. ``ldap://ldap.example.com``.
     :return: List of group names.
-    :rtype: List[str].
+    :rtype: list[str]
+    :raises ldap.LDAPError: on any LDAP error (connect, bind, or search).
     """
-
     config = current_app.config
-    client = ldap.initialize(config["AUTH_LDAP_SERVER"])
+    client = ldap.initialize(server_uri)
     _configure_ldap_client(client)
     groups = []
     try:
         _bind_ldap_client(client)
+        safe_uid = ldap.filter.escape_filter_chars(uid)
         for ldap_base, ldap_filter in config["AUTH_LDAP_GROUPS"]:
             groups.extend(
                 client.search_s(
                     ldap_base,
                     ldap.SCOPE_ONELEVEL,
                     attrlist=["cn"],
-                    filterstr=ldap_filter.format(uid),
+                    filterstr=ldap_filter.format(safe_uid),
                 )
             )
-    except ldap.LDAPError as e:
-        log.error(
-            "Cannot query groups of %s from LDAP. Error: %s",
-            uid,
-            _ldap_error_description(e),
-        )
-        return groups
     finally:
         try:
             client.unbind_s()
         except ldap.LDAPError:
             pass
 
-    group_names = [g.decode() for g in list(chain(*[info["cn"] for _, info in groups]))]
-    return group_names
+    return [g.decode() for g in list(chain(*[info["cn"] for _, info in groups]))]
+
+
+def query_ldap_groups(uid):
+    """Query user's LDAP groups, trying each configured server in turn.
+
+    Iterates over the URIs in AUTH_LDAP_SERVER (space-separated). On any
+    LDAP error the failure is logged and the next server is tried. Returns
+    the groups from the first server that responds successfully, or an empty
+    list if all servers fail.
+
+    :param str uid: username.
+    :return: List of group names.
+    :rtype: list[str]
+    """
+    tracer = trace.get_tracer(__name__)
+    for server_uri in _ldap_server_uris():
+        with tracer.start_as_current_span("ldap-query-server") as span:
+            span.set_attribute("ldap.server", server_uri)
+            try:
+                groups = _query_single_ldap_server(uid, server_uri)
+                span.set_attribute("ldap.result.group_count", len(groups))
+                span.set_status(Status(StatusCode.OK))
+                return groups
+            except ldap.LDAPError as e:
+                desc = _ldap_error_description(e)
+                log.error(
+                    "Cannot query groups of %s from LDAP server %s. Error: %s",
+                    uid,
+                    server_uri,
+                    desc,
+                )
+                span.record_exception(e)
+                span.set_status(Status(StatusCode.ERROR, desc))
+
+    log.error(
+        "All LDAP servers exhausted when querying groups of %s. Returning empty group list.",
+        uid,
+    )
+    return []
 
 
 @commit_on_success
