@@ -27,6 +27,8 @@ import requests
 import ldap
 import ldap.filter
 import flask
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 from itertools import chain
 
@@ -252,16 +254,25 @@ def query_ldap_groups(uid):
     :return: List of group names.
     :rtype: list[str]
     """
+    tracer = trace.get_tracer(__name__)
     for server_uri in _ldap_server_uris():
-        try:
-            return _query_single_ldap_server(uid, server_uri)
-        except ldap.LDAPError as e:
-            log.error(
-                "Cannot query groups of %s from LDAP server %s. Error: %s",
-                uid,
-                server_uri,
-                _ldap_error_description(e),
-            )
+        with tracer.start_as_current_span("ldap-query-server") as span:
+            span.set_attribute("ldap.server", server_uri)
+            try:
+                groups = _query_single_ldap_server(uid, server_uri)
+                span.set_attribute("ldap.result.group_count", len(groups))
+                span.set_status(Status(StatusCode.OK))
+                return groups
+            except ldap.LDAPError as e:
+                desc = _ldap_error_description(e)
+                log.error(
+                    "Cannot query groups of %s from LDAP server %s. Error: %s",
+                    uid,
+                    server_uri,
+                    desc,
+                )
+                span.record_exception(e)
+                span.set_status(Status(StatusCode.ERROR, desc))
 
     log.error(
         "All LDAP servers exhausted when querying groups of %s. Returning empty group list.",
