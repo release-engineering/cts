@@ -242,13 +242,41 @@ def _query_single_ldap_server(uid, server_uri):
     return [g.decode() for g in list(chain(*[info["cn"] for _, info in groups]))]
 
 
+# Errors that indicate a misconfiguration or a logical problem that will
+# reproduce identically on every server.  Retrying a different server would
+# only delay the inevitable, so we stop immediately when one of these is
+# raised.
+_LDAP_NON_RETRYABLE_ERRORS = (
+    # Authentication / authorisation problems – wrong credentials or mechanism
+    # are the same on every replica.
+    ldap.INVALID_CREDENTIALS,
+    ldap.INAPPROPRIATE_AUTH,
+    ldap.AUTH_METHOD_NOT_SUPPORTED,
+    ldap.STRONG_AUTH_REQUIRED,
+    ldap.INSUFFICIENT_ACCESS,
+    # Schema / configuration problems – a bad base DN, filter, or DN syntax
+    # will fail the same way regardless of which server handles the request.
+    ldap.NO_SUCH_OBJECT,
+    ldap.INVALID_DN_SYNTAX,
+    ldap.FILTER_ERROR,
+    ldap.NAMING_VIOLATION,
+    # Client-side parameter error – indicates a programming or configuration
+    # mistake that retrying cannot fix.
+    ldap.PARAM_ERROR,
+)
+
+
 def query_ldap_groups(uid):
     """Query user's LDAP groups, trying each configured server in turn.
 
-    Iterates over the URIs in AUTH_LDAP_SERVER (space-separated). On any
-    LDAP error the failure is logged and the next server is tried. Returns
-    the groups from the first server that responds successfully, or an empty
-    list if all servers fail.
+    Iterates over the URIs in AUTH_LDAP_SERVER (space-separated). On
+    transient errors (e.g. server unreachable, timeout) the failure is logged
+    and the next server is tried. On errors that indicate a misconfiguration
+    or a logical problem (see ``_LDAP_NON_RETRYABLE_ERRORS``) the loop stops
+    immediately because retrying another server would not help.
+
+    Returns the groups from the first server that responds successfully, or an
+    empty list if all servers fail.
 
     :param str uid: username.
     :return: List of group names.
@@ -263,6 +291,18 @@ def query_ldap_groups(uid):
                 span.set_attribute("ldap.result.group_count", len(groups))
                 span.set_status(Status(StatusCode.OK))
                 return groups
+            except _LDAP_NON_RETRYABLE_ERRORS as e:
+                desc = _ldap_error_description(e)
+                log.error(
+                    "Cannot query groups of %s from LDAP server %s. Error: %s",
+                    uid,
+                    server_uri,
+                    desc,
+                )
+                span.record_exception(e)
+                span.set_status(Status(StatusCode.ERROR, desc))
+                log.error("LDAP error is not retryable, skipping remaining servers.")
+                return []
             except ldap.LDAPError as e:
                 desc = _ldap_error_description(e)
                 log.error(

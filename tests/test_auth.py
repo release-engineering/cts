@@ -563,6 +563,81 @@ class TestQueryLdapGroups(unittest.TestCase):
         self.assertIn("user\\281\\29", filterstr)
         self.assertNotIn("user(1)", filterstr)
 
+    @patch.dict(
+        app.config,
+        {
+            "AUTH_LDAP_SERVER": "ldap://a.example.com ldap://b.example.com",
+            "AUTH_LDAP_GROUPS": [("ou=Groups,dc=example,dc=com", "memberUid={}")],
+            "AUTH_LDAP_BIND_MECHANISM": "none",
+        },
+    )
+    @patch("cts.auth.ldap.initialize")
+    def test_non_retryable_error_stops_server_loop(self, initialize):
+        """Non-retryable errors (e.g. INVALID_CREDENTIALS) stop the loop immediately."""
+        first_client = Mock()
+        first_client.search_s.side_effect = ldap.INVALID_CREDENTIALS(
+            {"desc": "Invalid credentials"}
+        )
+        second_client = Mock()
+        initialize.side_effect = [first_client, second_client]
+
+        groups = query_ldap_groups("me")
+
+        self.assertEqual([], groups)
+        # Second server must never be contacted.
+        second_client.search_s.assert_not_called()
+        first_client.unbind_s.assert_called_once_with()
+
+    @patch.dict(
+        app.config,
+        {
+            "AUTH_LDAP_SERVER": "ldap://a.example.com ldap://b.example.com",
+            "AUTH_LDAP_GROUPS": [("ou=Groups,dc=example,dc=com", "memberUid={}")],
+            "AUTH_LDAP_BIND_MECHANISM": "simple",
+            "AUTH_LDAP_BIND_DN": "cn=svc,dc=example,dc=com",
+            "AUTH_LDAP_BIND_PASSWORD": "wrong",
+        },
+    )
+    @patch("cts.auth.ldap.initialize")
+    def test_invalid_credentials_on_bind_stops_loop(self, initialize):
+        """INVALID_CREDENTIALS raised during bind stops the loop immediately."""
+        first_client = Mock()
+        first_client.simple_bind_s.side_effect = ldap.INVALID_CREDENTIALS(
+            {"desc": "Invalid credentials"}
+        )
+        second_client = Mock()
+        initialize.side_effect = [first_client, second_client]
+
+        groups = query_ldap_groups("me")
+
+        self.assertEqual([], groups)
+        second_client.simple_bind_s.assert_not_called()
+        first_client.unbind_s.assert_called_once_with()
+
+    @patch.dict(
+        app.config,
+        {
+            "AUTH_LDAP_SERVER": "ldap://a.example.com ldap://b.example.com",
+            "AUTH_LDAP_GROUPS": [("ou=BadBase,dc=example,dc=com", "memberUid={}")],
+            "AUTH_LDAP_BIND_MECHANISM": "none",
+        },
+    )
+    @patch("cts.auth.ldap.initialize")
+    def test_no_such_object_stops_loop(self, initialize):
+        """NO_SUCH_OBJECT (bad base DN) stops the loop immediately."""
+        first_client = Mock()
+        first_client.search_s.side_effect = ldap.NO_SUCH_OBJECT(
+            {"desc": "No such object"}
+        )
+        second_client = Mock()
+        initialize.side_effect = [first_client, second_client]
+
+        groups = query_ldap_groups("me")
+
+        self.assertEqual([], groups)
+        second_client.search_s.assert_not_called()
+        first_client.unbind_s.assert_called_once_with()
+
 
 class TestInitAuth(unittest.TestCase):
     """Test init_auth"""
