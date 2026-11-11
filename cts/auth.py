@@ -252,7 +252,9 @@ _LDAP_NON_RETRYABLE_ERRORS = (
     ldap.INVALID_CREDENTIALS,
     ldap.INAPPROPRIATE_AUTH,
     ldap.AUTH_METHOD_NOT_SUPPORTED,
+    ldap.AUTH_UNKNOWN,
     ldap.STRONG_AUTH_REQUIRED,
+    ldap.CONFIDENTIALITY_REQUIRED,
     ldap.INSUFFICIENT_ACCESS,
     # Schema / configuration problems – a bad base DN, filter, or DN syntax
     # will fail the same way regardless of which server handles the request.
